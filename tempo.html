@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>TEMPO BEACON</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+–bg: #0d0e0f;
+–surface: #141618;
+–panel: #1a1d1f;
+–border: #2a2e32;
+–border-bright: #3a3e44;
+–green: #00e87a;
+–green-dim: #00623a;
+–amber: #ffb300;
+–amber-dim: #6b4a00;
+–red: #ff3b30;
+–red-dim: #6b1810;
+–text: #d8dde3;
+–text-dim: #5a6068;
+–text-mid: #8a9099;
+–accent: #00c8ff;
+–accent-dim: #003a4a;
+–screw: #222628;
+}
+
+html, body {
+height: 100%;
+background: var(–bg);
+color: var(–text);
+font-family: ‘Rajdhani’, sans-serif;
+font-weight: 400;
+overflow: hidden;
+-webkit-font-smoothing: antialiased;
+}
+
+/* ── CHASSIS TEXTURE ── */
+body::before {
+content: ‘’;
+position: fixed; inset: 0;
+background-image:
+repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.012) 2px, rgba(255,255,255,0.012) 4px);
+pointer-events: none; z-index: 0;
+}
+
+body::after {
+content: ‘’;
+position: fixed; inset: 0;
+background:
+radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,200,255,0.04) 0%, transparent 60%),
+radial-gradient(ellipse 60% 40% at 50% 100%, rgba(0,232,122,0.03) 0%, transparent 60%);
+pointer-events: none; z-index: 0;
+}
+
+.app {
+position: relative; z-index: 1;
+height: 100vh;
+display: flex;
+flex-direction: column;
+padding: 12px;
+gap: 10px;
+max-width: 480px;
+margin: 0 auto;
+}
+
+/* ── HEADER ── */
+.header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 10px 16px;
+background: var(–panel);
+border: 1px solid var(–border);
+border-top: 3px solid var(–accent);
+position: relative;
+}
+.header::before, .header::after {
+content: ‘’;
+position: absolute;
+width: 8px; height: 8px;
+background: var(–screw);
+border-radius: 50%;
+border: 1px solid var(–border-bright);
+box-shadow: inset 1px 1px 0 rgba(255,255,255,0.1);
+}
+.header::before { top: 6px; left: 6px; }
+.header::after { top: 6px; right: 6px; }
+
+.logo-block { display: flex; flex-direction: column; gap: 1px; }
+.logo-name {
+font-size: 20px; font-weight: 700; letter-spacing: 4px;
+color: var(–text);
+text-transform: uppercase;
+}
+.logo-name span { color: var(–accent); }
+.logo-sub {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 9px; letter-spacing: 2px;
+color: var(–text-dim); text-transform: uppercase;
+}
+
+.link-status {
+display: flex; align-items: center; gap: 8px;
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 10px; letter-spacing: 1px;
+color: var(–text-dim);
+}
+.link-dot {
+width: 8px; height: 8px;
+border-radius: 50%;
+background: var(–text-dim);
+box-shadow: 0 0 0 0 transparent;
+transition: background 0.3s, box-shadow 0.3s;
+}
+.link-dot.live {
+background: var(–green);
+box-shadow: 0 0 8px var(–green), 0 0 16px rgba(0,232,122,0.4);
+animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+0%, 100% { box-shadow: 0 0 6px var(–green), 0 0 12px rgba(0,232,122,0.3); }
+50% { box-shadow: 0 0 12px var(–green), 0 0 24px rgba(0,232,122,0.5); }
+}
+
+/* ── MAIN BPM DISPLAY ── */
+.bpm-panel {
+background: var(–panel);
+border: 1px solid var(–border);
+padding: 20px 20px 16px;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 4px;
+position: relative;
+flex-shrink: 0;
+}
+.bpm-panel::before, .bpm-panel::after {
+content: ‘’;
+position: absolute;
+width: 8px; height: 8px;
+background: var(–screw);
+border-radius: 50%;
+border: 1px solid var(–border-bright);
+}
+.bpm-panel::before { bottom: 8px; left: 8px; }
+.bpm-panel::after { bottom: 8px; right: 8px; }
+
+.bpm-label {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 9px; letter-spacing: 3px;
+color: var(–text-dim); text-transform: uppercase;
+}
+
+.bpm-value {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: clamp(72px, 20vw, 96px);
+font-weight: 400;
+line-height: 1;
+color: var(–green);
+text-shadow: 0 0 20px rgba(0,232,122,0.5), 0 0 60px rgba(0,232,122,0.2);
+letter-spacing: -2px;
+transition: color 0.15s, text-shadow 0.15s;
+position: relative;
+}
+.bpm-value.flash {
+color: #fff;
+text-shadow: 0 0 30px rgba(255,255,255,0.8);
+}
+.bpm-value.no-signal {
+color: var(–text-dim);
+text-shadow: none;
+}
+
+.bpm-decimal {
+font-size: 0.35em;
+color: var(–green-dim);
+vertical-align: baseline;
+position: relative; top: -8px;
+}
+
+.bpm-unit {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 11px; letter-spacing: 3px;
+color: var(–text-mid);
+text-transform: uppercase;
+margin-top: -2px;
+}
+
+/* ── BEAT FLASH RING ── */
+.beat-ring {
+position: absolute;
+top: 50%; left: 50%;
+transform: translate(-50%, -50%);
+width: 120px; height: 120px;
+border-radius: 50%;
+border: 2px solid var(–green-dim);
+pointer-events: none;
+opacity: 0;
+}
+.beat-ring.flash {
+animation: ring-expand 0.4s ease-out forwards;
+}
+@keyframes ring-expand {
+0% { opacity: 0.8; transform: translate(-50%, -50%) scale(0.8); border-color: var(–green); }
+100% { opacity: 0; transform: translate(-50%, -50%) scale(2); border-color: transparent; }
+}
+
+/* ── STABILITY METER ── */
+.stability-panel {
+background: var(–panel);
+border: 1px solid var(–border);
+padding: 14px 16px;
+flex-shrink: 0;
+}
+
+.panel-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 10px;
+}
+.panel-title {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 9px; letter-spacing: 3px;
+color: var(–text-dim); text-transform: uppercase;
+}
+.panel-value {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 11px; letter-spacing: 1px;
+color: var(–text-mid);
+}
+
+.meter-track {
+height: 10px;
+background: var(–surface);
+border: 1px solid var(–border);
+position: relative;
+overflow: hidden;
+}
+.meter-fill {
+height: 100%;
+width: 0%;
+transition: width 0.4s ease, background 0.4s ease;
+position: relative;
+}
+.meter-fill::after {
+content: ‘’;
+position: absolute;
+top: 0; right: 0;
+width: 2px; height: 100%;
+background: rgba(255,255,255,0.6);
+}
+
+/* Stability segments */
+.meter-segments {
+position: absolute; inset: 0;
+display: flex;
+}
+.meter-seg {
+flex: 1;
+border-right: 1px solid var(–bg);
+}
+.meter-seg:last-child { border-right: none; }
+
+/* ── INTERVAL HISTORY ── */
+.history-panel {
+background: var(–panel);
+border: 1px solid var(–border);
+padding: 14px 16px;
+flex: 1;
+min-height: 0;
+display: flex;
+flex-direction: column;
+}
+
+.beat-graph {
+flex: 1;
+position: relative;
+overflow: hidden;
+margin-top: 10px;
+}
+canvas#beatCanvas {
+width: 100%;
+height: 100%;
+display: block;
+}
+
+/* ── CONTROLS ── */
+.controls-panel {
+background: var(–panel);
+border: 1px solid var(–border);
+border-bottom: 3px solid var(–border);
+padding: 14px 16px;
+display: flex;
+gap: 10px;
+align-items: center;
+flex-shrink: 0;
+position: relative;
+}
+.controls-panel::before, .controls-panel::after {
+content: ‘’;
+position: absolute;
+width: 8px; height: 8px;
+background: var(–screw);
+border-radius: 50%;
+border: 1px solid var(–border-bright);
+bottom: 8px;
+}
+.controls-panel::before { left: 8px; }
+.controls-panel::after { right: 8px; }
+
+.btn {
+flex: 1;
+padding: 14px 10px;
+border: 1px solid var(–border-bright);
+background: var(–surface);
+color: var(–text);
+font-family: ‘Rajdhani’, sans-serif;
+font-size: 14px; font-weight: 700;
+letter-spacing: 2px;
+text-transform: uppercase;
+cursor: pointer;
+transition: all 0.15s;
+position: relative;
+overflow: hidden;
+}
+.btn::before {
+content: ‘’;
+position: absolute;
+inset: 0;
+background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+}
+.btn:hover { border-color: var(–accent); color: var(–accent); }
+.btn:active { transform: translateY(1px); }
+
+.btn-start {
+background: var(–green-dim);
+border-color: var(–green);
+color: var(–green);
+flex: 2;
+}
+.btn-start:hover { background: rgba(0,232,122,0.2); }
+.btn-start.active {
+background: var(–green);
+color: #000;
+box-shadow: 0 0 20px rgba(0,232,122,0.4);
+}
+
+.btn-reset { border-color: var(–border-bright); }
+
+/* ── STATS ROW ── */
+.stats-row {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 8px;
+flex-shrink: 0;
+}
+
+.stat-box {
+background: var(–panel);
+border: 1px solid var(–border);
+padding: 10px 12px;
+display: flex;
+flex-direction: column;
+gap: 3px;
+}
+.stat-label {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 8px; letter-spacing: 2px;
+color: var(–text-dim); text-transform: uppercase;
+}
+.stat-value {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 16px;
+color: var(–text-mid);
+transition: color 0.3s;
+}
+.stat-value.good { color: var(–green); }
+.stat-value.warn { color: var(–amber); }
+.stat-value.bad { color: var(–red); }
+
+/* ── ABLETON LINK MOCK ── */
+.link-panel {
+background: var(–panel);
+border: 1px solid var(–border);
+padding: 12px 16px;
+display: flex;
+align-items: center;
+justify-content: space-between;
+flex-shrink: 0;
+}
+.link-info {
+display: flex; flex-direction: column; gap: 3px;
+}
+.link-title {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 9px; letter-spacing: 3px;
+color: var(–text-dim); text-transform: uppercase;
+}
+.link-detail {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 11px;
+color: var(–text-mid);
+}
+
+.btn-link {
+padding: 10px 18px;
+border: 1px solid var(–accent-dim);
+background: var(–accent-dim);
+color: var(–accent);
+font-family: ‘Rajdhani’, sans-serif;
+font-size: 13px; font-weight: 700;
+letter-spacing: 2px;
+text-transform: uppercase;
+cursor: pointer;
+transition: all 0.15s;
+}
+.btn-link:hover { border-color: var(–accent); background: rgba(0,200,255,0.15); }
+.btn-link.connected {
+border-color: var(–green);
+background: var(–green-dim);
+color: var(–green);
+}
+
+/* ── SENSITIVITY ── */
+.sens-row {
+display: flex; align-items: center; gap: 12px;
+flex-shrink: 0;
+background: var(–panel);
+border: 1px solid var(–border);
+padding: 12px 16px;
+}
+.sens-label {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 9px; letter-spacing: 2px;
+color: var(–text-dim); text-transform: uppercase;
+flex-shrink: 0;
+}
+input[type=range] {
+flex: 1;
+-webkit-appearance: none;
+height: 4px;
+background: var(–border);
+outline: none;
+border-radius: 0;
+}
+input[type=range]::-webkit-slider-thumb {
+-webkit-appearance: none;
+width: 16px; height: 16px;
+background: var(–accent);
+border: none;
+cursor: pointer;
+box-shadow: 0 0 8px rgba(0,200,255,0.5);
+}
+.sens-val {
+font-family: ‘Share Tech Mono’, monospace;
+font-size: 11px;
+color: var(–accent);
+width: 30px; text-align: right;
+flex-shrink: 0;
+}
+</style>
+
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+
+  <div class="header">
+    <div class="logo-block">
+      <div class="logo-name">TEMPO<span>BEACON</span></div>
+      <div class="logo-sub">Beat Detection · BPM Analysis · Link Sync</div>
+    </div>
+    <div class="link-status">
+      <div class="link-dot" id="micDot"></div>
+      <span id="micStatus">MIC OFF</span>
+    </div>
+  </div>
+
+  <!-- BPM DISPLAY -->
+
+  <div class="bpm-panel">
+    <div class="beat-ring" id="beatRing"></div>
+    <div class="bpm-label">Beats Per Minute</div>
+    <div class="bpm-value no-signal" id="bpmDisplay">
+      --<span class="bpm-decimal" id="bpmDecimal"></span>
+    </div>
+    <div class="bpm-unit">BPM</div>
+  </div>
+
+  <!-- STATS ROW -->
+
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-label">Avg BPM</div>
+      <div class="stat-value" id="avgBpm">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Deviation</div>
+      <div class="stat-value" id="deviation">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Beats</div>
+      <div class="stat-value" id="beatCount">0</div>
+    </div>
+  </div>
+
+  <!-- STABILITY METER -->
+
+  <div class="stability-panel">
+    <div class="panel-header">
+      <div class="panel-title">Tempo Stability</div>
+      <div class="panel-value" id="stabilityPct">--</div>
+    </div>
+    <div class="meter-track">
+      <div class="meter-segments">
+        <div class="meter-seg"></div><div class="meter-seg"></div>
+        <div class="meter-seg"></div><div class="meter-seg"></div>
+        <div class="meter-seg"></div><div class="meter-seg"></div>
+        <div class="meter-seg"></div><div class="meter-seg"></div>
+        <div class="meter-seg"></div><div class="meter-seg"></div>
+      </div>
+      <div class="meter-fill" id="stabilityBar"></div>
+    </div>
+  </div>
+
+  <!-- INTERVAL HISTORY GRAPH -->
+
+  <div class="history-panel">
+    <div class="panel-header">
+      <div class="panel-title">Interval History</div>
+      <div class="panel-value" id="lastInterval">-- ms</div>
+    </div>
+    <div class="beat-graph">
+      <canvas id="beatCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- SENSITIVITY -->
+
+  <div class="sens-row">
+    <div class="sens-label">Sensitivity</div>
+    <input type="range" id="sensSlider" min="1" max="10" value="5">
+    <div class="sens-val" id="sensVal">5</div>
+  </div>
+
+  <!-- ABLETON LINK -->
+
+  <div class="link-panel">
+    <div class="link-info">
+      <div class="link-title">Ableton Link</div>
+      <div class="link-detail" id="linkDetail">Not connected · same WiFi required</div>
+    </div>
+    <button class="btn-link" id="linkBtn">CONNECT</button>
+  </div>
+
+  <!-- CONTROLS -->
+
+  <div class="controls-panel">
+    <button class="btn btn-reset" id="resetBtn">RESET</button>
+    <button class="btn btn-start" id="startBtn">START MIC</button>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+// TEMPO BEACON — Beat Detection Engine
+// ════════════════════════════════════════════════
+// Porting notes:
+//   - Beat detection: pure math on Float32Array, identical in Swift/Kotlin
+//   - BPM calc: median of interval window, no platform deps
+//   - Stability: stddev of intervals, fully portable
+//   - Only AudioContext is web-specific; replace with
+//     AVAudioEngine (iOS) or AudioRecord (Android)
+// ════════════════════════════════════════════════
+
+const CONFIG = {
+  FFT_SIZE: 1024,
+  SAMPLE_RATE: 44100,
+  ONSET_HOLDOFF_MS: 250,      // min ms between detected beats
+  INTERVAL_WINDOW: 12,         // how many intervals to average
+  LOW_FREQ_BIN_MAX: 10,        // focus on kick/bass frequencies
+  BPM_MIN: 50,
+  BPM_MAX: 220,
+};
+
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let animFrame = null;
+let isRunning = false;
+
+// Beat tracking state
+let lastBeatTime = 0;
+let beatCount = 0;
+let intervalHistory = [];     // rolling window of ms between beats
+let bpmHistory = [];          // for graph
+let prevEnergyBuffer = new Float32Array(CONFIG.LOW_FREQ_BIN_MAX);
+let energyThreshold = 0;
+let adaptiveBaseline = 0;
+
+// Sensitivity control
+let sensitivity = 5;
+
+// Link simulation
+let linkConnected = false;
+let linkBPM = 0;
+
+// DOM refs
+const bpmDisplay = document.getElementById('bpmDisplay');
+const bpmDecimal = document.getElementById('bpmDecimal');
+const avgBpmEl = document.getElementById('avgBpm');
+const deviationEl = document.getElementById('deviation');
+const beatCountEl = document.getElementById('beatCount');
+const stabilityBar = document.getElementById('stabilityBar');
+const stabilityPct = document.getElementById('stabilityPct');
+const lastIntervalEl = document.getElementById('lastInterval');
+const startBtn = document.getElementById('startBtn');
+const resetBtn = document.getElementById('resetBtn');
+const micDot = document.getElementById('micDot');
+const micStatus = document.getElementById('micStatus');
+const beatRing = document.getElementById('beatRing');
+const linkBtn = document.getElementById('linkBtn');
+const linkDetail = document.getElementById('linkDetail');
+const sensSlider = document.getElementById('sensSlider');
+const sensVal = document.getElementById('sensVal');
+const canvas = document.getElementById('beatCanvas');
+const ctx2d = canvas.getContext('2d');
+
+// ── Resize canvas ──
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * window.devicePixelRatio;
+  canvas.height = rect.height * window.devicePixelRatio;
+  ctx2d.scale(window.devicePixelRatio, window.devicePixelRatio);
+  drawGraph();
+}
+window.addEventListener('resize', resizeCanvas);
+
+// ── START / STOP ──
+startBtn.addEventListener('click', async () => {
+  if (!isRunning) {
+    await startMic();
+  } else {
+    stopMic();
+  }
+});
+
+resetBtn.addEventListener('click', () => {
+  beatCount = 0;
+  intervalHistory = [];
+  bpmHistory = [];
+  lastBeatTime = 0;
+  adaptiveBaseline = 0;
+  updateUI(null);
+  drawGraph();
+});
+
+sensSlider.addEventListener('input', (e) => {
+  sensitivity = parseInt(e.target.value);
+  sensVal.textContent = sensitivity;
+});
+
+// ── MIC START ──
+async function startMic() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        sampleRate: CONFIG.SAMPLE_RATE
+      }
+    });
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: CONFIG.SAMPLE_RATE
+    });
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = CONFIG.FFT_SIZE;
+    analyser.smoothingTimeConstant = 0.3;
+
+    const source = audioCtx.createMediaStreamSource(micStream);
+    source.connect(analyser);
+
+    isRunning = true;
+    startBtn.textContent = 'STOP';
+    startBtn.classList.add('active');
+    micDot.classList.add('live');
+    micStatus.textContent = 'LISTENING';
+
+    resizeCanvas();
+    detectLoop();
+
+  } catch (err) {
+    console.error('Mic error:', err);
+    micStatus.textContent = 'MIC DENIED';
+  }
+}
+
+function stopMic() {
+  isRunning = false;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  startBtn.textContent = 'START MIC';
+  startBtn.classList.remove('active');
+  micDot.classList.remove('live');
+  micStatus.textContent = 'MIC OFF';
+}
+
+// ════════════════════════════════════════════════
+// BEAT DETECTION LOOP
+// Onset detection via spectral flux on low-freq bins
+// This entire function is portable — only the
+// Float32Array input changes on native platforms
+// ════════════════════════════════════════════════
+const freqData = new Float32Array(CONFIG.FFT_SIZE / 2);
+
+function detectLoop() {
+  if (!isRunning) return;
+  animFrame = requestAnimationFrame(detectLoop);
+
+  analyser.getFloatFrequencyData(freqData);
+
+  // ── Spectral flux on low-frequency bins (kick/bass range) ──
+  // Bin resolution = sampleRate / fftSize ≈ 43 Hz per bin
+  // Bins 0–10 ≈ 0–430 Hz (kick drum fundamental range)
+  let flux = 0;
+  let currentEnergy = 0;
+
+  for (let i = 1; i < CONFIG.LOW_FREQ_BIN_MAX; i++) {
+    // Convert dB to linear energy (analyser returns negative dB)
+    const curr = Math.pow(10, freqData[i] / 20);
+    const prev = Math.pow(10, prevEnergyBuffer[i] / 20);
+    const diff = curr - prev;
+    if (diff > 0) flux += diff;   // only positive flux (energy increase)
+    currentEnergy += curr;
+    prevEnergyBuffer[i] = freqData[i];
+  }
+
+  // ── Adaptive threshold ──
+  // Baseline tracks the average flux with slow decay
+  const sensitivityMultiplier = 1.8 - (sensitivity - 1) * 0.12; // 1.8 → 0.48
+  adaptiveBaseline = adaptiveBaseline * 0.92 + flux * 0.08;
+  const threshold = adaptiveBaseline * sensitivityMultiplier;
+
+  const now = performance.now();
+  const timeSinceLast = now - lastBeatTime;
+
+  // ── Beat detected ──
+  if (flux > threshold && timeSinceLast > CONFIG.ONSET_HOLDOFF_MS) {
+    onBeatDetected(now, timeSinceLast);
+    lastBeatTime = now;
+  }
+
+  drawGraph();
+}
+
+// ════════════════════════════════════════════════
+// BEAT EVENT HANDLER
+// Called each time a beat is detected
+// ════════════════════════════════════════════════
+function onBeatDetected(now, intervalMs) {
+  beatCount++;
+
+  // Visual flash
+  triggerBeatFlash();
+
+  // Only record interval if it's plausible (filters spurious detections)
+  if (beatCount > 1 && intervalMs > 200 && intervalMs < 2000) {
+    // Check for doubled/halved intervals (missed/double-triggered beat)
+    const medianInterval = getMedian(intervalHistory);
+    let adjustedInterval = intervalMs;
+
+    if (medianInterval > 0) {
+      const ratio = intervalMs / medianInterval;
+      if (ratio > 1.7 && ratio < 2.3) adjustedInterval = intervalMs / 2;  // missed beat
+      else if (ratio > 0.4 && ratio < 0.6) adjustedInterval = intervalMs * 2; // double trigger
+    }
+
+    intervalHistory.push(adjustedInterval);
+    if (intervalHistory.length > CONFIG.INTERVAL_WINDOW) {
+      intervalHistory.shift();
+    }
+    bpmHistory.push(60000 / adjustedInterval);
+    if (bpmHistory.length > 32) bpmHistory.shift();
+  }
+
+  updateUI(intervalMs);
+  if (linkConnected) sendToLink();
+}
+
+// ════════════════════════════════════════════════
+// BPM & STABILITY CALCULATIONS
+// Pure math — identical in Swift/Kotlin
+// ════════════════════════════════════════════════
+function getMedian(arr) {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+function getStdDev(arr, mean) {
+  if (arr.length < 2) return 0;
+  const variance = arr.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / arr.length;
+  return Math.sqrt(variance);
+}
+
+function calculateBPM() {
+  if (intervalHistory.length < 2) return null;
+  const medianInterval = getMedian(intervalHistory);
+  return 60000 / medianInterval;
+}
+
+function calculateStability() {
+  // Returns 0–100, where 100 = perfectly stable
+  if (intervalHistory.length < 3) return null;
+  const mean = intervalHistory.reduce((a, b) => a + b, 0) / intervalHistory.length;
+  const stdDev = getStdDev(intervalHistory, mean);
+  // stdDev of ~50ms = very unstable, ~5ms = very stable
+  const stability = Math.max(0, Math.min(100, 100 - (stdDev / 50) * 100));
+  return { stability, stdDev, mean };
+}
+
+// ── UI UPDATE ──
+function updateUI(rawInterval) {
+  const bpm = calculateBPM();
+  const stats = calculateStability();
+  beatCountEl.textContent = beatCount;
+
+  if (bpm !== null) {
+    const bpmInt = Math.floor(bpm);
+    const bpmFrac = Math.round((bpm - bpmInt) * 10);
+    bpmDisplay.textContent = bpmInt;
+    bpmDisplay.classList.remove('no-signal');
+    bpmDecimal.textContent = '.' + bpmFrac;
+    avgBpmEl.textContent = bpmInt;
+    avgBpmEl.className = 'stat-value good';
+  } else {
+    bpmDisplay.textContent = '--';
+    bpmDisplay.classList.add('no-signal');
+    bpmDecimal.textContent = '';
+    avgBpmEl.textContent = '--';
+    avgBpmEl.className = 'stat-value';
+  }
+
+  if (rawInterval && rawInterval > 200 && rawInterval < 2000) {
+    lastIntervalEl.textContent = Math.round(rawInterval) + ' ms';
+  }
+
+  if (stats !== null) {
+    const { stability, stdDev } = stats;
+    const pct = Math.round(stability);
+    stabilityPct.textContent = pct + '%';
+    stabilityBar.style.width = pct + '%';
+
+    const bpmDev = (stdDev / (getMedian(intervalHistory) / 60000)) / 1000;
+
+    if (stability >= 85) {
+      stabilityBar.style.background = 'var(--green)';
+      deviationEl.textContent = '±' + stdDev.toFixed(0) + 'ms';
+      deviationEl.className = 'stat-value good';
+    } else if (stability >= 60) {
+      stabilityBar.style.background = 'var(--amber)';
+      deviationEl.textContent = '±' + stdDev.toFixed(0) + 'ms';
+      deviationEl.className = 'stat-value warn';
+    } else {
+      stabilityBar.style.background = 'var(--red)';
+      deviationEl.textContent = '±' + stdDev.toFixed(0) + 'ms';
+      deviationEl.className = 'stat-value bad';
+    }
+  }
+}
+
+// ── BEAT FLASH ANIMATION ──
+function triggerBeatFlash() {
+  bpmDisplay.classList.add('flash');
+  setTimeout(() => bpmDisplay.classList.remove('flash'), 80);
+
+  beatRing.classList.remove('flash');
+  void beatRing.offsetWidth; // reflow to restart animation
+  beatRing.classList.add('flash');
+}
+
+// ── INTERVAL HISTORY GRAPH ──
+function drawGraph() {
+  const W = canvas.width / window.devicePixelRatio;
+  const H = canvas.height / window.devicePixelRatio;
+  ctx2d.clearRect(0, 0, W, H);
+
+  if (bpmHistory.length < 2) {
+    ctx2d.fillStyle = '#2a2e32';
+    ctx2d.font = '10px Share Tech Mono';
+    ctx2d.textAlign = 'center';
+    ctx2d.fillText('WAITING FOR BEATS...', W / 2, H / 2);
+    return;
+  }
+
+  // Grid lines
+  ctx2d.strokeStyle = '#1e2226';
+  ctx2d.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = (H / 4) * i;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, y);
+    ctx2d.lineTo(W, y);
+    ctx2d.stroke();
+  }
+
+  const median = getMedian(bpmHistory);
+  const spread = 20; // ±20 BPM display range
+
+  const toY = (bpm) => {
+    const norm = (bpm - (median - spread)) / (spread * 2);
+    return H - norm * H;
+  };
+
+  // Median line
+  const medY = toY(median);
+  ctx2d.strokeStyle = '#2a3a2a';
+  ctx2d.setLineDash([4, 4]);
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, medY);
+  ctx2d.lineTo(W, medY);
+  ctx2d.stroke();
+  ctx2d.setLineDash([]);
+
+  // BPM curve
+  const step = W / (bpmHistory.length - 1);
+
+  // Glow pass
+  ctx2d.shadowColor = '#00e87a';
+  ctx2d.shadowBlur = 8;
+  ctx2d.strokeStyle = 'rgba(0,232,122,0.3)';
+  ctx2d.lineWidth = 4;
+  ctx2d.beginPath();
+  bpmHistory.forEach((bpm, i) => {
+    const x = i * step;
+    const y = toY(bpm);
+    i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+  });
+  ctx2d.stroke();
+
+  // Main line
+  ctx2d.shadowBlur = 0;
+  ctx2d.strokeStyle = '#00e87a';
+  ctx2d.lineWidth = 1.5;
+  ctx2d.beginPath();
+  bpmHistory.forEach((bpm, i) => {
+    const x = i * step;
+    const y = toY(bpm);
+    i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+  });
+  ctx2d.stroke();
+
+  // Dots for each beat
+  bpmHistory.forEach((bpm, i) => {
+    const x = i * step;
+    const y = toY(bpm);
+    ctx2d.fillStyle = i === bpmHistory.length - 1 ? '#fff' : '#00e87a';
+    ctx2d.beginPath();
+    ctx2d.arc(x, y, i === bpmHistory.length - 1 ? 4 : 2, 0, Math.PI * 2);
+    ctx2d.fill();
+  });
+
+  // BPM label on median line
+  ctx2d.fillStyle = '#3a4a3a';
+  ctx2d.font = '9px Share Tech Mono';
+  ctx2d.textAlign = 'right';
+  ctx2d.fillText(median.toFixed(1) + ' BPM', W - 4, medY - 4);
+}
+
+// ════════════════════════════════════════════════
+// ABLETON LINK SIMULATION
+// In a real app, replace this with the LinkKit SDK
+// (iOS) or Carabiner/Link SDK (Android/desktop)
+// The protocol runs over UDP on port 20808
+// ════════════════════════════════════════════════
+linkBtn.addEventListener('click', () => {
+  linkConnected = !linkConnected;
+  if (linkConnected) {
+    linkBtn.textContent = 'DISCONNECT';
+    linkBtn.classList.add('connected');
+    linkDetail.textContent = 'Connected · 1 peer · port 20808';
+    micDot.classList.add('live');
+  } else {
+    linkBtn.textContent = 'CONNECT';
+    linkBtn.classList.remove('connected');
+    linkDetail.textContent = 'Not connected · same WiFi required';
+  }
+});
+
+function sendToLink() {
+  const bpm = calculateBPM();
+  if (bpm && bpm > CONFIG.BPM_MIN && bpm < CONFIG.BPM_MAX) {
+    linkBPM = bpm;
+    // In real implementation:
+    // link.tempo = bpm;  ← iOS LinkKit
+    // linkSession.setTempo(bpm, hostTime);  ← Android
+    linkDetail.textContent = `Sending ${bpm.toFixed(1)} BPM → Ableton`;
+  }
+}
+
+// ── Init ──
+resizeCanvas();
+</script>
+
+</body>
+</html>
