@@ -1,113 +1,96 @@
 """
 Network 01: Basic Volume Pulse
-===============================
-The simplest audio-reactive graphic: a circle that grows and glows
-with the overall loudness (RMS) of the incoming audio signal.
+Audio-Reactive Motion Graphics — TouchDesigner Network Builder
 
-Signal Flow:
-    [Audio Device In] → [Analyze RMS] → [Filter] → [Math] → [Null CHOP]
-                                                                    ↓
-    [Constant BG] → [Composite] ← [Circle TOP (radius = f(volume))]
-                         ↓
-                    [Level TOP (brightness = f(volume))] → [Null TOP: OUTPUT]
+HOW TO RUN:
+  1. In your TouchDesigner project, create a Base COMP (right-click in network → Base)
+  2. Double-click to go inside it
+  3. Add a Text DAT (right-click → Add Operator → DAT → Text)
+  4. Paste this entire script into the Text DAT
+  5. Set the Text DAT 'Language' parameter to 'Python'
+  6. Right-click the Text DAT → Run Script
+  7. Right-click the OUTPUT node that appears → View
 
-Concepts introduced:
-    - Audio Device In CHOP: captures live microphone or line input
-    - Analyze CHOP: reduces a signal to a single scalar (RMS = energy)
-    - Filter CHOP: smooths jitter for organic motion
-    - Math CHOP: remaps a signal to a useful visual range
-    - Parameter expressions: linking a CHOP value to a TOP parameter
+WHAT GETS BUILT:
+  Audio Device In → Analyze RMS → Math (gain) → Null CHOP (audio_data)
+  Circle TOP (radius driven by audio_data) → Level TOP → Null TOP (OUTPUT)
 
-How to run:
-    1. Create a Base COMP in your project (e.g. /project1/base1)
-    2. Inside it, create a Text DAT and paste this script
-    3. Set the Text DAT "Language" to Python, then right-click → Run Script
-    OR paste directly into the Textport (Alt+T) after setting BUILD_PATH below.
+TROUBLESHOOTING:
+  • 'audio_in' cook error / no device: click 'audio_in', open its parameters,
+    go to the Audio Device page and select your microphone from the Device menu.
+  • Circle doesn't react: select 'math_gain' and increase its Gain parameter.
+    Start at 5, go up to 20+ for a quiet mic.
+  • Wrong operator type error: your TD version may use a different internal name.
+    Open the OP Create dialog (Tab key), search for the operator, and note its
+    exact name — then replace the type constant in this script.
 """
-
-# ---------- configuration ----------
-BUILD_PATH = '/project1'   # path to the container where the network will be built
-# -----------------------------------
 
 
 def build():
-    p = op(BUILD_PATH)
-    if p is None:
-        print(f"ERROR: '{BUILD_PATH}' not found. Create a Base COMP there first.")
-        return
+    # 'me' is this Text DAT; me.parent() is the Base COMP it lives inside.
+    # The whole network is built inside that same Base COMP.
+    p = me.parent()
 
-    # ── Audio chain ─────────────────────────────────────────────────────────
+    # ── CHOP chain: capture and measure audio loudness ────────────────────────
 
-    audio_in = p.create(audiodevInCHOP, 'audio_in')
-    audio_in.nodeX, audio_in.nodeY = -900, 200
-    # 'device 0' = system default input; change index to select another device
-    audio_in.par.rate = 44100
+    # Audio Device In: captures the live microphone or line input
+    audio = p.create(audiodevInCHOP, 'audio_in')
+    audio.nodeX, audio.nodeY = -700, 100
+    # TD will try to use the default audio device.
+    # If this shows a cook error, select it and pick your device manually.
 
-    # RMS analysis: Root Mean Square = perceptual loudness of the signal
-    analyze = p.create(analyzeCHOP, 'analyze_rms')
-    analyze.nodeX, analyze.nodeY = -700, 200
-    analyze.par.function = 'rms'
-    analyze.setInput(0, audio_in)
+    # Analyze CHOP: collapses the audio waveform into a single RMS value.
+    # RMS (Root Mean Square) approximates perceived loudness.
+    rms = p.create(analyzeCHOP, 'analyze_rms')
+    rms.nodeX, rms.nodeY = -500, 100
+    rms.par.function = 'rms'
+    rms.setInput(0, audio)
 
-    # Smooth rapid transients so the circle moves organically, not jerkily
-    filt = p.create(filterCHOP, 'filter_smooth')
-    filt.nodeX, filt.nodeY = -500, 200
-    filt.par.width = 0.04       # 40 ms lag — adjust for faster/slower response
-    filt.setInput(0, analyze)
+    # Math CHOP: multiply the tiny RMS values (often 0.001–0.1) to a usable range.
+    gain = p.create(mathCHOP, 'math_gain')
+    gain.nodeX, gain.nodeY = -300, 100
+    gain.par.gain = 5.0    # ← TUNE THIS. Increase if signal is too quiet.
+    gain.setInput(0, rms)
 
-    # Remap 0..0.5 → 0..1 so quiet rooms still show some movement
-    math = p.create(mathCHOP, 'math_remap')
-    math.nodeX, math.nodeY = -300, 200
-    math.par.fromrangex = 0.0   # input min
-    math.par.fromrangey = 0.5   # input max (tune to your loudest signal)
-    math.par.torangex   = 0.0   # output min
-    math.par.torangey   = 1.0   # output max
-    math.setInput(0, filt)
+    # Null CHOP: stable reference point. All visual expressions point here.
+    data = p.create(nullCHOP, 'audio_data')
+    data.nodeX, data.nodeY = -100, 100
+    data.setInput(0, gain)
 
-    # Null CHOP: a stable reference other operators can point their expressions at
-    audio_data = p.create(nullCHOP, 'audio_data')
-    audio_data.nodeX, audio_data.nodeY = -100, 200
-    audio_data.setInput(0, math)
+    # ── TOP chain: draw the audio-reactive visual ─────────────────────────────
 
-    # ── Visuals ──────────────────────────────────────────────────────────────
-
-    # Very dark background so the bright circle pops
-    bg = p.create(constTOP, 'bg')
-    bg.nodeX, bg.nodeY = -900, -100
-    bg.par.colorr = 0.02
-    bg.par.colorg = 0.02
-    bg.par.colorb = 0.06
-
-    # Circle whose radius tracks audio loudness
+    # Circle TOP: radius is driven by audio_data channel 0 (the RMS value).
+    # [0] = first channel, 0-indexed. At silence radius ~0.05, at full volume ~0.45.
     circle = p.create(circleTOP, 'circle_pulse')
-    circle.nodeX, circle.nodeY = -700, -100
-    # Base radius 0.05 (5% of frame) + up to 0.38 more at full volume
-    circle.par.radx.expr = "0.05 + op('audio_data')['chan1'] * 0.38"
-    circle.par.rady.expr = "0.05 + op('audio_data')['chan1'] * 0.38"
-    circle.par.colorr = 0.85
-    circle.par.colorg = 0.20
-    circle.par.colorb = 1.00    # purple-white
+    circle.nodeX, circle.nodeY = -500, -150
+    circle.par.radx.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
+    circle.par.rady.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
+    circle.par.colorr = 0.9
+    circle.par.colorg = 0.2
+    circle.par.colorb = 1.0    # purple-white fill
 
-    # Place circle over background
-    comp = p.create(compositeTOP, 'composite')
-    comp.nodeX, comp.nodeY = -500, -100
-    comp.par.operand = 'over'
-    comp.setInput(0, bg)
-    comp.setInput(1, circle)
+    # Level TOP: boosts brightness on loud moments for an energy-flash feel.
+    level = p.create(levelTOP, 'level_brightness')
+    level.nodeX, level.nodeY = -300, -150
+    level.par.brightness.expr = "0.4 + op('audio_data')[0] * 1.5"
+    level.setInput(0, circle)
 
-    # Boost brightness on loud moments for an energy "flash" feel
-    level = p.create(levelTOP, 'level_boost')
-    level.nodeX, level.nodeY = -300, -100
-    level.par.brightness.expr = "0.7 + op('audio_data')['chan1'] * 0.8"
-    level.par.contrast.expr   = "1.0 + op('audio_data')['chan1'] * 0.4"
-    level.setInput(0, comp)
-
-    # Final output node — view this to see the result
+    # OUTPUT: right-click this and choose View to see the result.
     output = p.create(nullTOP, 'OUTPUT')
-    output.nodeX, output.nodeY = -100, -100
+    output.nodeX, output.nodeY = -100, -150
     output.setInput(0, level)
 
-    print("✓  Network 01 built.  Right-click 'OUTPUT' → View to see the result.")
-    print("   Speak or play music into your microphone to test.")
+    print("=" * 50)
+    print("Network 01: Basic Volume Pulse — BUILT")
+    print("Container:", p.path)
+    print()
+    print("Next steps:")
+    print("  1. Right-click OUTPUT → View")
+    print("  2. If 'audio_in' shows a red cook error:")
+    print("     Click it → Parameters → select your mic from Device")
+    print("  3. If circle doesn't move: select 'math_gain'")
+    print("     and increase the Gain value (try 10, 20, 50...)")
+    print("=" * 50)
+
 
 build()

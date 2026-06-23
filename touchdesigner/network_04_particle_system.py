@@ -1,206 +1,184 @@
 """
-Network 04: Audio-Reactive 3D Particle System
-===============================================
-A full 3D rendering pipeline where bass drives particle birth rate,
-mid frequencies drive particle speed, and high frequencies add turbulence.
-Particles are rendered with a Phong material and post-processed with glow
-and a feedback trail, building on every technique from Networks 01–03.
+Network 04: 3D Audio-Reactive Particle System
+Audio-Reactive Motion Graphics — TouchDesigner Network Builder
 
-Signal Flow:
-    [Audio In] ──→ bass / mid / high band analysis (same as Network 03)
-                                │
-    [Grid SOP] → [Particle SOP] (expressions on birth, speed, turbulence)
-                       │
-              [Null SOP] → [Geo COMP] + [Camera COMP] + [Light COMP]
-                                  │
-                            [Render TOP]
-                                  │
-                     [Glow TOP] → [Feedback trail] → [Null TOP: OUTPUT]
+HOW TO RUN:
+  Same as Network 01 — paste into a Text DAT inside a Base COMP, Run Script.
 
-Concepts introduced:
-    - Full 3D pipeline: SOP → Geo COMP → Camera/Light → Render TOP
-    - Particle SOP: birth rate, life, gravity, turbulence, drag
-    - Phong MAT: basic lit material with audio-reactive emissive color
-    - Render TOP: renders the 3D scene to a 2D image
-    - Post-processing stack on top of 3D render
+WHAT GETS BUILT:
+  Audio In → Spectrum → spectrum_data (Null CHOP)
 
-How to run:
-    Paste into a Text DAT inside a Base COMP and Run Script.
-    The script builds everything in BUILD_PATH.
+  Inside a Geo COMP:
+    Grid SOP (birth positions) → Particle SOP (simulated particles) → Null SOP
+
+  Scene: Geo COMP + Camera COMP + Light COMP → Render TOP
+  Post: Glow TOP + Feedback trail → Null TOP (OUTPUT)
+
+THREE-BAND CONTROL:
+  Bass  → particle birth rate  (kick drum = burst of new particles)
+  Mid   → upward velocity      (melody = particles float higher / faster)
+  High  → turbulence           (hi-hats = particles scatter and jitter)
+
+AFTER BUILDING — IMPORTANT MANUAL STEPS:
+  1. Select the Geo COMP ('particle_geo'). In its parameters, go to the Render tab
+     and set 'Material' to the Phong MAT that was created ('phong_mat').
+  2. If particles aren't visible: select 'render_scene', check that Camera and Lights
+     point to the correct COMPs.
+  3. The Particle SOP inside the Geo COMP — double-click the Geo COMP to go inside,
+     then select 'particles' and adjust Birth Rate if nothing appears.
+
+TROUBLESHOOTING:
+  • Black render: check render_scene has camera='camera' and lights='light1'.
+  • No particles: inside particle_geo, select 'particles' → increase Birth Rate.
+  • Particles off-screen: select 'camera' COMP and move it further back (tz = 5+).
 """
-
-BUILD_PATH = '/project1'
 
 
 def build():
-    p = op(BUILD_PATH)
-    if p is None:
-        print(f"ERROR: '{BUILD_PATH}' not found.")
-        return
+    p = me.parent()
 
-    # ── Audio analysis (3 bands) ──────────────────────────────────────────────
-    # Identical band-extraction pattern to Network 03.
+    # ── Audio + spectrum ──────────────────────────────────────────────────────
 
-    audio_in = p.create(audiodevInCHOP, 'audio_in')
-    audio_in.nodeX, audio_in.nodeY = -1400, 600
-    audio_in.par.rate = 44100
+    audio = p.create(audiodevInCHOP, 'audio_in')
+    audio.nodeX, audio.nodeY = -900, 400
 
     spectrum = p.create(spectrumCHOP, 'spectrum')
-    spectrum.nodeX, spectrum.nodeY = -1200, 600
+    spectrum.nodeX, spectrum.nodeY = -700, 400
     spectrum.par.windowsize = 512
-    spectrum.par.overlap    = 0.75
-    spectrum.setInput(0, audio_in)
+    spectrum.setInput(0, audio)
 
-    band_defs = [
-        ('bass',  0,   10, -1000, 800),
-        ('mid',   10,  60, -1000, 600),
-        ('high',  60, 200, -1000, 400),
-    ]
-    nulls = {}
-    for name, ch_start, ch_end, nx, ny in band_defs:
-        sel = p.create(selectCHOP, f'select_{name}')
-        sel.nodeX, sel.nodeY = nx, ny
-        sel.par.chanstart = ch_start
-        sel.par.chanend   = ch_end - 1
-        sel.setInput(0, spectrum)
+    spec_data = p.create(nullCHOP, 'spectrum_data')
+    spec_data.nodeX, spec_data.nodeY = -500, 400
+    spec_data.setInput(0, spectrum)
 
-        analyze = p.create(analyzeCHOP, f'analyze_{name}')
-        analyze.nodeX, analyze.nodeY = nx + 200, ny
-        analyze.par.function = 'average'
-        analyze.setInput(0, sel)
+    # Band expressions — same pattern as Network 03
+    BASS  = "clamp((op('spectrum_data')[1]+op('spectrum_data')[2]+op('spectrum_data')[3]+op('spectrum_data')[4]) * 60, 0, 1)"
+    MID   = "clamp((op('spectrum_data')[15]+op('spectrum_data')[25]+op('spectrum_data')[35]) * 90, 0, 1)"
+    HIGH  = "clamp((op('spectrum_data')[60]+op('spectrum_data')[90]+op('spectrum_data')[120]) * 120, 0, 1)"
 
-        filt = p.create(filterCHOP, f'filter_{name}')
-        filt.nodeX, filt.nodeY = nx + 400, ny
-        filt.par.width = 0.04
-        filt.setInput(0, analyze)
+    # ── Phong material ────────────────────────────────────────────────────────
+    # Emissive color makes particles glow even without a nearby light.
+    mat = p.create(phongMAT, 'phong_mat')
+    mat.nodeX, mat.nodeY = -300, 200
+    mat.par.emitcolorr.expr = f"0.1 + ({MID})  * 0.9"
+    mat.par.emitcolorg.expr = f"0.3 + ({HIGH}) * 0.7"
+    mat.par.emitcolorb.expr = f"1.0 - ({BASS}) * 0.7"
 
-        math = p.create(mathCHOP, f'math_{name}')
-        math.nodeX, math.nodeY = nx + 600, ny
-        math.par.gain  = 14.0
-        math.par.clamp = True
-        math.par.clampmin = 0.0
-        math.par.clampmax = 1.0
-        math.setInput(0, filt)
-
-        null = p.create(nullCHOP, f'data_{name}')
-        null.nodeX, null.nodeY = nx + 800, ny
-        null.setInput(0, math)
-        nulls[name] = null
-
-    # ── Particle material ─────────────────────────────────────────────────────
-
-    mat = p.create(phongMAT, 'particle_mat')
-    mat.nodeX, mat.nodeY = -400, 800
-    # Emissive color shifts with mid frequencies (makes particles glow)
-    mat.par.emitcolorr.expr = "0.2 + op('data_mid')['chan1']  * 0.8"
-    mat.par.emitcolorg.expr = "0.5 + op('data_high')['chan1'] * 0.5"
-    mat.par.emitcolorb.expr = "1.0 - op('data_bass')['chan1'] * 0.6"
-    mat.par.ambientcolorr = 0.0
-    mat.par.ambientcolorg = 0.0
-    mat.par.ambientcolorb = 0.0
-    mat.par.shininess = 60
-
-    # ── 3D scene components ───────────────────────────────────────────────────
-
-    # Geo COMP: container for all geometry operators
+    # ── Geo COMP: contains all 3D geometry SOPs ───────────────────────────────
     geo = p.create(geoComp, 'particle_geo')
-    geo.nodeX, geo.nodeY = 0, 600
-    geo.par.matx = mat.path   # apply the Phong material
+    geo.nodeX, geo.nodeY = 0, 400
 
-    # Camera: looking down -Z axis with some perspective
-    cam = p.create(cameraComp, 'camera')
-    cam.nodeX, cam.nodeY = 0, 400
-    cam.par.tz = 5.0
-    cam.par.fov = 45.0
+    # After building, manually assign phong_mat in Geo's Render → Material param.
+    # Script note: geo.par.mat references vary by TD version; set it in the UI.
 
-    # Point light above the scene
-    light = p.create(lightComp, 'light')
-    light.nodeX, light.nodeY = 0, 200
-    light.par.tx =  2.0
-    light.par.ty =  3.0
-    light.par.tz =  4.0
+    # ── SOP network inside the Geo COMP ──────────────────────────────────────
+    # Go inside particle_geo to create the SOP operators.
 
-    # ── Geometry inside the Geo COMP ──────────────────────────────────────────
-    # TouchDesigner requires SOPs to live inside a Geo COMP.
-    # We navigate inside it to create the SOP network.
-
-    # Point grid: defines where particles are born
     grid = geo.create(gridSOP, 'grid_source')
-    grid.nodeX, grid.nodeY = -400, 0
-    grid.par.rows = 4
-    grid.par.cols = 4
-    grid.par.ty   = 0.0
+    grid.nodeX, grid.nodeY = -300, 0
+    grid.par.rows = 5
+    grid.par.cols = 5   # 25 birth-position points on a 5×5 grid
 
-    # Particle SOP: the simulation
-    # bass  → birthrate  (more particles on kick/bass hits)
-    # mid   → speed (vy) (particles fly faster on melodic energy)
-    # high  → turbulence (chaotic shimmer on hi-hats / transients)
+    # Particle SOP: simulation node.
+    # Each frame births new particles from the grid, moves them, then ages them out.
     particles = geo.create(particleSOP, 'particles')
-    particles.nodeX, particles.nodeY = -200, 0
-    particles.setInput(0, grid)           # source positions
-    # Birth rate: 20 base + up to 500 extra on hard bass hits
-    particles.par.birthrate.expr   = "20 + op('data_bass')['chan1'] * 500"
-    # Lifespan: longer at rest, shorter when energy is high (more turnover)
-    particles.par.lifespanmax.expr = "3.0 - op('data_mid')['chan1']  * 2.0"
-    particles.par.lifespanmin.expr = "0.5"
-    # Upward velocity driven by mid band
-    particles.par.vy.expr          = "0.5 + op('data_mid')['chan1']  * 2.5"
-    # Turbulence: high frequencies cause random scattering
-    particles.par.turbulencer.expr = "0.1 + op('data_high')['chan1'] * 3.0"
-    # Light drag so particles float rather than rocket
-    particles.par.dragr            = 0.08
+    particles.nodeX, particles.nodeY = -100, 0
+    particles.setInput(0, grid)
 
-    # Null SOP inside Geo: the final geometry output
+    # Birth rate: baseline 10/sec + up to 800 extra on a hard bass hit.
+    # The expression references the CHOP in the PARENT container (p, not geo).
+    particles.par.birthrate.expr   = f"10 + ({BASS}) * 800"
+    # Lifespan: particles live 0.5–3 seconds (shorter when energy is high = fast turnover)
+    particles.par.lifespanmax.expr = f"3.0 - ({MID}) * 2.0"
+    particles.par.lifespanmin      = 0.3
+
+    # Upward launch velocity: mid band makes particles fly higher
+    # Note: if 'vy' throws an error in your TD version, set it manually on the Particle SOP
+    try:
+        particles.par.vy.expr = f"0.3 + ({MID}) * 2.5"
+    except AttributeError:
+        print("  Note: vy parameter not found — set initial Y velocity manually on 'particles'")
+
+    # Turbulence: high freq = scatter/jitter
+    try:
+        particles.par.turbulencer.expr = f"0.05 + ({HIGH}) * 3.0"
+    except AttributeError:
+        print("  Note: turbulencer not found — set turbulence manually on 'particles'")
+
+    # Output SOP: marks what the Geo COMP renders
     sop_out = geo.create(nullSOP, 'geo_out')
-    sop_out.nodeX, sop_out.nodeY = 0, 0
+    sop_out.nodeX, sop_out.nodeY = 100, 0
     sop_out.setInput(0, particles)
     sop_out.par.displayflag = True
     sop_out.par.renderflag  = True
 
-    # ── Render TOP ────────────────────────────────────────────────────────────
+    # ── Camera and Light ──────────────────────────────────────────────────────
+
+    cam = p.create(cameraComp, 'camera')
+    cam.nodeX, cam.nodeY = 0, 200
+    cam.par.tz = 5.0    # move camera back so scene is in view
+    cam.par.fov = 50.0
+
+    light = p.create(lightComp, 'light1')
+    light.nodeX, light.nodeY = 200, 200
+    light.par.tx =  2.0
+    light.par.ty =  4.0
+    light.par.tz =  3.0
+
+    # ── Render TOP: combines geo + camera + light into a 2D image ─────────────
 
     render = p.create(renderTOP, 'render_scene')
-    render.nodeX, render.nodeY = 200, 600
-    render.par.camera  = cam.path
+    render.nodeX, render.nodeY = 200, 400
+    render.par.camera = cam.path
     render.par.lights  = light.path
+    # Black background so particles are clearly visible
     render.par.bgcolorr = 0.01
     render.par.bgcolorg = 0.01
     render.par.bgcolorb = 0.03
 
     # ── Post-processing ───────────────────────────────────────────────────────
 
-    # Glow: particles bloom on loud moments
     glow = p.create(glowTOP, 'glow')
-    glow.nodeX, glow.nodeY = 400, 600
-    glow.par.size.expr     = "4 + op('data_bass')['chan1'] * 30"
-    glow.par.strength.expr = "0.5 + op('data_mid')['chan1'] * 2.0"
+    glow.nodeX, glow.nodeY = 400, 400
+    glow.par.size.expr     = f"3 + ({BASS}) * 35"
+    glow.par.strength.expr = f"0.3 + ({MID}) * 2.0"
     glow.setInput(0, render)
 
     # Feedback trail (same pattern as Network 03)
     feedback = p.create(feedbackTOP, 'feedback')
-    feedback.nodeX, feedback.nodeY = 400, 400
+    feedback.nodeX, feedback.nodeY = 400, 200
 
     fade = p.create(levelTOP, 'feedback_fade')
-    fade.nodeX, fade.nodeY = 600, 400
-    fade.par.brightness.expr = "0.85 + op('data_bass')['chan1'] * 0.12"
+    fade.nodeX, fade.nodeY = 600, 200
+    fade.par.brightness.expr = f"0.80 + ({BASS}) * 0.16"
     fade.setInput(0, feedback)
 
     comp_fb = p.create(compositeTOP, 'comp_feedback')
-    comp_fb.nodeX, comp_fb.nodeY = 600, 600
+    comp_fb.nodeX, comp_fb.nodeY = 600, 400
     comp_fb.par.operand = 'add'
     comp_fb.setInput(0, fade)
     comp_fb.setInput(1, glow)
 
     feedback.par.top = comp_fb.name
 
-    # Final output
     output = p.create(nullTOP, 'OUTPUT')
-    output.nodeX, output.nodeY = 800, 600
+    output.nodeX, output.nodeY = 800, 400
     output.setInput(0, comp_fb)
 
-    print("✓  Network 04 built.")
-    print("   3D particles burst on bass, scatter on highs, flow on mids.")
-    print("   TIP: Select 'camera' COMP and adjust tz/fov to frame the scene.")
-    print("   TIP: Select 'particle_mat' and tweak emissive color expressions.")
+    print("=" * 50)
+    print("Network 04: 3D Particle System — BUILT")
+    print("Container:", p.path)
+    print()
+    print("REQUIRED MANUAL STEP:")
+    print("  Select 'particle_geo' → Parameters → Render tab")
+    print("  Set 'Material' to:", mat.path)
+    print()
+    print("If render is black:")
+    print("  Select 'render_scene' → check Camera and Lights paths")
+    print("  Move 'camera' further back: set tz = 8 or 10")
+    print()
+    print("Right-click OUTPUT → View")
+    print("=" * 50)
+
 
 build()
