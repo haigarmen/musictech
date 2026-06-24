@@ -7,56 +7,38 @@ HOW TO RUN:
   If you get a NameError, run diagnose.py first.
 
 THREE-BAND CONTROL:
-  Bass  (bins 1–4)   → Noise zoom / period
-  Mid   (bins 15–35) → Amplitude + hue rotation
+  Bass  (bins 1–4)    → Noise zoom / period
+  Mid   (bins 15–35)  → Amplitude + hue rotation
   High  (bins 60–120) → Roughness / texture speed
 """
 
-import builtins as _bt
-try:
-    import td as _td
-except Exception:
-    _td = None
 
+def create_op(parent_comp, node_name, *type_names):
+    """
+    Create a TD operator using string-based creation (confirmed working in TD 2025+).
+    Tries each provided type name, then auto-tries an all-lowercase variant.
+    """
+    attempts = list(type_names)
+    for name in type_names:
+        for fam in ('CHOP', 'TOP', 'SOP', 'Comp', 'COMP', 'MAT', 'DAT'):
+            if name.endswith(fam):
+                lc = name[:-len(fam)].lower() + fam
+                if lc not in attempts:
+                    attempts.append(lc)
+                break
 
-def td_op(*names):
-    g = globals()
-    for name in names:
-        t = g.get(name)
-        if t is not None:
-            return t
-        t = getattr(_bt, name, None)
-        if t is not None:
-            return t
-        if _td is not None:
-            t = getattr(_td, name, None)
-            if t is not None:
-                return t
-    return names[0]
-
-
-def create_op(parent_comp, type_name, node_name):
-    op_type = td_op(type_name)
-    if not isinstance(op_type, str):
+    for name in attempts:
         try:
-            return parent_comp.create(op_type, node_name)
-        except Exception:
-            pass
-    short = type_name
-    for suffix in ('CHOP', 'TOP', 'SOP', 'COMP', 'MAT', 'DAT'):
-        if type_name.endswith(suffix):
-            short = type_name[:-len(suffix)]
-            break
-    for attempt in (short, type_name):
-        try:
-            n = parent_comp.create(attempt, node_name)
+            n = parent_comp.create(name, node_name)
             if n is not None:
                 return n
         except Exception:
             pass
+
     raise RuntimeError(
-        f"Cannot create '{type_name}'. Add manually: right-click → Add Operator,"
-        f" search '{short}', rename to '{node_name}'. Run diagnose.py for help."
+        f"Cannot create '{node_name}'. Tried: {attempts}\n"
+        f"Add manually: right-click → Add Operator, search for the operator,\n"
+        f"rename it to '{node_name}'. Run diagnose.py for environment info."
     )
 
 
@@ -65,10 +47,10 @@ def build():
 
     # ── Audio + Spectrum ──────────────────────────────────────────────────────
 
-    audio = create_op(p, 'audiodevInCHOP', 'audio_in')
+    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP', 'audiodevInCHOP')
     audio.nodeX, audio.nodeY = -900, 300
 
-    spectrum = create_op(p, 'spectrumCHOP', 'spectrum')
+    spectrum = create_op(p, 'spectrum', 'spectrumCHOP', 'audiospectrumCHOP')
     spectrum.nodeX, spectrum.nodeY = -700, 300
     spectrum.par.windowsize = 512
     spectrum.setInput(0, audio)
@@ -76,7 +58,7 @@ def build():
     # Null CHOP: reference point for spectrum data.
     # Expressions use op('spectrum_data')[binIndex]  (0-indexed).
     # With 44100 Hz / 512 FFT: bin n ≈ n × 86 Hz.
-    spec_data = create_op(p, 'nullCHOP', 'spectrum_data')
+    spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
     spec_data.nodeX, spec_data.nodeY = -500, 300
     spec_data.setInput(0, spectrum)
 
@@ -89,7 +71,7 @@ def build():
 
     # ── Noise TOP ─────────────────────────────────────────────────────────────
 
-    noise = create_op(p, 'noiseTOP', 'noise_field')
+    noise = create_op(p, 'noise_field', 'noiseTOP')
     noise.nodeX, noise.nodeY = -300, 300
     noise.par.periodx.expr = f"0.2 + ({BASS}) * 1.5"
     noise.par.periody.expr = f"0.2 + ({BASS}) * 1.5"
@@ -100,7 +82,7 @@ def build():
 
     # ── HSV Adjust: hue follows mid band ─────────────────────────────────────
 
-    hsv = create_op(p, 'hsvAdjustTOP', 'hsv_color')
+    hsv = create_op(p, 'hsv_color', 'hsvAdjustTOP')
     hsv.nodeX, hsv.nodeY = -100, 300
     hsv.par.hue.expr        = f"(absTime.seconds * 0.05 + ({MID}) * 0.4) % 1.0"
     hsv.par.saturation.expr = f"0.7 + ({MID})  * 0.5"
@@ -109,28 +91,28 @@ def build():
 
     # ── Feedback loop ─────────────────────────────────────────────────────────
 
-    feedback = create_op(p, 'feedbackTOP', 'feedback')
+    feedback = create_op(p, 'feedback', 'feedbackTOP')
     feedback.nodeX, feedback.nodeY = -300, 100
 
     # 0.82 = moderate trail. Raise toward 0.97 for longer trails.
-    fade = create_op(p, 'levelTOP', 'feedback_fade')
+    fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = -100, 100
     fade.par.brightness.expr = f"0.82 + ({BASS}) * 0.15"
     fade.setInput(0, feedback)
 
-    comp_fb = create_op(p, 'compositeTOP', 'comp_feedback')
+    comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
     comp_fb.nodeX, comp_fb.nodeY = 100, 300
     comp_fb.par.operand = 'add'
     comp_fb.setInput(0, fade)
     comp_fb.setInput(1, hsv)
     feedback.par.top = comp_fb.name
 
-    level_out = create_op(p, 'levelTOP', 'level_output')
+    level_out = create_op(p, 'level_output', 'levelTOP')
     level_out.nodeX, level_out.nodeY = 300, 300
     level_out.par.gamma = 0.85
     level_out.setInput(0, comp_fb)
 
-    output = create_op(p, 'nullTOP', 'OUTPUT')
+    output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 500, 300
     output.setInput(0, level_out)
 
@@ -138,6 +120,7 @@ def build():
     print("Network 03: Noise Field + Feedback — BUILT in", p.path)
     print()
     print("→ Right-click OUTPUT → View")
+    print("→ audio_in red: click it → Parameters → pick your mic")
     print("→ Bass: zoom/scale    Mid: hue    High: texture speed")
     print("→ Tune ×60/×90/×120 multipliers in noise_field expressions")
     print("=" * 55)

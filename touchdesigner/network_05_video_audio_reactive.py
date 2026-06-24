@@ -13,53 +13,35 @@ THREE-BAND EFFECTS:
   HIGH  → Pixel ripple     (displacement jitter on transients)
 """
 
-import builtins as _bt
-try:
-    import td as _td
-except Exception:
-    _td = None
-
 VIDEO_DEVICE_INDEX = 0    # 0 = first camera. Change if needed.
 
 
-def td_op(*names):
-    g = globals()
-    for name in names:
-        t = g.get(name)
-        if t is not None:
-            return t
-        t = getattr(_bt, name, None)
-        if t is not None:
-            return t
-        if _td is not None:
-            t = getattr(_td, name, None)
-            if t is not None:
-                return t
-    return names[0]
+def create_op(parent_comp, node_name, *type_names):
+    """
+    Create a TD operator using string-based creation (confirmed working in TD 2025+).
+    Tries each provided type name, then auto-tries an all-lowercase variant.
+    """
+    attempts = list(type_names)
+    for name in type_names:
+        for fam in ('CHOP', 'TOP', 'SOP', 'Comp', 'COMP', 'MAT', 'DAT'):
+            if name.endswith(fam):
+                lc = name[:-len(fam)].lower() + fam
+                if lc not in attempts:
+                    attempts.append(lc)
+                break
 
-
-def create_op(parent_comp, type_name, node_name):
-    op_type = td_op(type_name)
-    if not isinstance(op_type, str):
+    for name in attempts:
         try:
-            return parent_comp.create(op_type, node_name)
-        except Exception:
-            pass
-    short = type_name
-    for suffix in ('CHOP', 'TOP', 'SOP', 'COMP', 'MAT', 'DAT'):
-        if type_name.endswith(suffix):
-            short = type_name[:-len(suffix)]
-            break
-    for attempt in (short, type_name):
-        try:
-            n = parent_comp.create(attempt, node_name)
+            n = parent_comp.create(name, node_name)
             if n is not None:
                 return n
         except Exception:
             pass
+
     raise RuntimeError(
-        f"Cannot create '{type_name}'. Add manually: right-click → Add Operator,"
-        f" search '{short}', rename to '{node_name}'. Run diagnose.py for help."
+        f"Cannot create '{node_name}'. Tried: {attempts}\n"
+        f"Add manually: right-click → Add Operator, search for the operator,\n"
+        f"rename it to '{node_name}'. Run diagnose.py for environment info."
     )
 
 
@@ -68,15 +50,15 @@ def build():
 
     # ── Audio + Spectrum ──────────────────────────────────────────────────────
 
-    audio = create_op(p, 'audiodevInCHOP', 'audio_in')
+    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP', 'audiodevInCHOP')
     audio.nodeX, audio.nodeY = -1000, 500
 
-    spectrum = create_op(p, 'spectrumCHOP', 'spectrum')
+    spectrum = create_op(p, 'spectrum', 'spectrumCHOP', 'audiospectrumCHOP')
     spectrum.nodeX, spectrum.nodeY = -800, 500
     spectrum.par.windowsize = 512
     spectrum.setInput(0, audio)
 
-    spec_data = create_op(p, 'nullCHOP', 'spectrum_data')
+    spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
     spec_data.nodeX, spec_data.nodeY = -600, 500
     spec_data.setInput(0, spectrum)
 
@@ -86,19 +68,19 @@ def build():
 
     # ── Live video ────────────────────────────────────────────────────────────
 
-    vid = create_op(p, 'videodevInTOP', 'video_in')
+    vid = create_op(p, 'video_in', 'videodeviceinTOP', 'videodevInTOP')
     vid.nodeX, vid.nodeY = -600, 100
     vid.par.device = VIDEO_DEVICE_INDEX
 
     # ── Effect 1: Displacement (HIGH) ─────────────────────────────────────────
 
-    disp_noise = create_op(p, 'noiseTOP', 'disp_noise')
+    disp_noise = create_op(p, 'disp_noise', 'noiseTOP')
     disp_noise.nodeX, disp_noise.nodeY = -600, -100
     disp_noise.par.tx.expr    = "absTime.seconds * 0.15"
     disp_noise.par.ty.expr    = "absTime.seconds * 0.09"
     disp_noise.par.rough.expr = f"0.5 + ({HIGH}) * 0.45"
 
-    displace = create_op(p, 'displaceTOP', 'displace_high')
+    displace = create_op(p, 'displace_high', 'displaceTOP')
     displace.nodeX, displace.nodeY = -400, 100
     displace.par.displacex.expr = f"0.003 + ({HIGH}) * 0.06"
     displace.par.displacey.expr = f"0.003 + ({HIGH}) * 0.04"
@@ -107,7 +89,7 @@ def build():
 
     # ── Effect 2: Hue rotation (MID) ─────────────────────────────────────────
 
-    hsv = create_op(p, 'hsvAdjustTOP', 'hsv_shift')
+    hsv = create_op(p, 'hsv_shift', 'hsvAdjustTOP')
     hsv.nodeX, hsv.nodeY = -200, 100
     hsv.par.hue.expr        = f"(absTime.seconds * 0.02 + ({MID}) * 0.5) % 1.0"
     hsv.par.saturation.expr = f"1.0 + ({MID}) * 0.9"
@@ -116,16 +98,16 @@ def build():
 
     # ── Effect 3: Feedback trail (BASS) ──────────────────────────────────────
 
-    feedback = create_op(p, 'feedbackTOP', 'feedback')
+    feedback = create_op(p, 'feedback', 'feedbackTOP')
     feedback.nodeX, feedback.nodeY = -200, -100
 
     # 0.60 = fast decay (crisp). 0.94 = slow decay (heavy trails).
-    fade = create_op(p, 'levelTOP', 'feedback_fade')
+    fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = 0, -100
     fade.par.brightness.expr = f"0.60 + ({BASS}) * 0.34"
     fade.setInput(0, feedback)
 
-    comp_fb = create_op(p, 'compositeTOP', 'comp_feedback')
+    comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
     comp_fb.nodeX, comp_fb.nodeY = 0, 100
     comp_fb.par.operand = 'over'   # try 'add' for bright accumulating glow
     comp_fb.setInput(0, fade)
@@ -134,19 +116,19 @@ def build():
 
     # ── Post-processing ───────────────────────────────────────────────────────
 
-    glow = create_op(p, 'glowTOP', 'glow')
+    glow = create_op(p, 'glow', 'glowTOP')
     glow.nodeX, glow.nodeY = 200, 100
     glow.par.size.expr     = f"1 + ({BASS}) * 25"
     glow.par.strength.expr = f"0.05 + ({BASS}) * 0.7"
     glow.setInput(0, comp_fb)
 
-    level_out = create_op(p, 'levelTOP', 'level_output')
+    level_out = create_op(p, 'level_output', 'levelTOP')
     level_out.nodeX, level_out.nodeY = 400, 100
     level_out.par.contrast = 1.1
     level_out.par.gamma    = 0.9
     level_out.setInput(0, glow)
 
-    output = create_op(p, 'nullTOP', 'OUTPUT')
+    output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 600, 100
     output.setInput(0, level_out)
 
@@ -155,6 +137,7 @@ def build():
     print()
     print("SETUP: select 'video_in' → set Device to your webcam")
     print("→ Right-click OUTPUT → View")
+    print("→ audio_in red: click it → Parameters → pick your mic")
     print()
     print("BASS → ghost trails   MID → colour shift   HIGH → pixel ripple")
     print("=" * 55)
