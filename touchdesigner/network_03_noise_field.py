@@ -52,7 +52,12 @@ def build():
 
     spectrum = create_op(p, 'spectrum', 'spectrumCHOP', 'audiospectrumCHOP')
     spectrum.nodeX, spectrum.nodeY = -700, 300
-    spectrum.par.windowsize = 512
+    for _wp in ('windowsize', 'winsize', 'fftsize', 'window'):
+        try:
+            getattr(spectrum.par, _wp).val = 512
+            break
+        except AttributeError:
+            continue
     spectrum.setInput(0, audio)
 
     # Null CHOP: reference point for spectrum data.
