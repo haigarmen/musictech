@@ -83,18 +83,25 @@ try:
 except Exception as e:
     print(f"   create('mathCHOP', ...) failed: {e}")
 
-# 7. Probe Spectrum CHOP parameter names
-print(f"\n7. Spectrum CHOP — probing window-size parameter name:")
-try:
-    _sp = me.parent().create('spectrumCHOP', '_diag_spectrum')
-    for _candidate in ('windowsize', 'winsize', 'fftsize', 'window'):
+# 7. Audio Spectrum CHOP — probing window-size parameter name:
+print(f"\n7. Audio Spectrum CHOP — probing window-size parameter name:")
+_sp = None
+for _sptype in ('audiospectrumCHOP', 'spectrumCHOP'):
+    try:
+        _sp = me.parent().create(_sptype, '_diag_spectrum')
+        print(f"   Created using type string: '{_sptype}'")
+        break
+    except Exception as _e:
+        print(f"   '{_sptype}' failed: {_e}")
+if _sp is not None:
+    for _candidate in ('winsize', 'windowsize', 'fftsize', 'window'):
         if hasattr(_sp.par, _candidate):
-            print(f"   '{_candidate}' EXISTS on spectrumCHOP")
+            print(f"   '{_candidate}' EXISTS <- use this")
         else:
             print(f"   '{_candidate}' not found")
     _sp.destroy()
-except Exception as _e:
-    print(f"   Could not create spectrumCHOP: {_e}")
+else:
+    print("   Could not create any spectrum CHOP variant")
 
 print("\n" + "=" * 60)
 print("Paste this full output when reporting issues.")

@@ -50,9 +50,9 @@ def build():
     audio = create_op(p, 'audio_in', 'audiodeviceinCHOP', 'audiodevInCHOP')
     audio.nodeX, audio.nodeY = -900, 300
 
-    spectrum = create_op(p, 'spectrum', 'spectrumCHOP', 'audiospectrumCHOP')
+    spectrum = create_op(p, 'spectrum', 'audiospectrumCHOP', 'spectrumCHOP')
     spectrum.nodeX, spectrum.nodeY = -700, 300
-    for _wp in ('windowsize', 'winsize', 'fftsize', 'window'):
+    for _wp in ('winsize', 'windowsize', 'fftsize', 'window'):
         try:
             getattr(spectrum.par, _wp).val = 512
             break
