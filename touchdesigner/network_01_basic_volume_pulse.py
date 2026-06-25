@@ -45,6 +45,14 @@ def create_op(parent_comp, node_name, *type_names):
     )
 
 
+def connect_op(dest, index, source):
+    """Wire source → dest input slot, trying setInput then inputConnectors."""
+    try:
+        dest.setInput(index, source)
+    except AttributeError:
+        dest.inputConnectors[index].connect(source)
+
+
 def build():
     p = me.parent()
 
@@ -58,17 +66,17 @@ def build():
     rms = create_op(p, 'analyze_rms', 'analyzeCHOP')
     rms.nodeX, rms.nodeY = -500, 100
     rms.par.function = 'rms'
-    rms.setInput(0, audio)
+    connect_op(rms, 0, audio)
 
     # Increase Gain if the circle barely reacts (try 10, 20, 50).
     gain = create_op(p, 'math_gain', 'mathCHOP')
     gain.nodeX, gain.nodeY = -300, 100
     gain.par.gain = 5.0
-    gain.setInput(0, rms)
+    connect_op(gain, 0, rms)
 
     data = create_op(p, 'audio_data', 'nullCHOP')
     data.nodeX, data.nodeY = -100, 100
-    data.setInput(0, gain)
+    connect_op(data, 0, gain)
 
     # ── TOP: visuals ──────────────────────────────────────────────────────────
 
@@ -84,11 +92,11 @@ def build():
     level = create_op(p, 'level_brightness', 'levelTOP')
     level.nodeX, level.nodeY = -300, -200
     level.par.brightness.expr = "0.4 + op('audio_data')[0] * 1.5"
-    level.setInput(0, circle)
+    connect_op(level, 0, circle)
 
     output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = -100, -200
-    output.setInput(0, level)
+    connect_op(output, 0, level)
 
     print("=" * 55)
     print("Network 01: Basic Volume Pulse — BUILT in", p.path)

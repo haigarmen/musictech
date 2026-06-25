@@ -42,6 +42,14 @@ def create_op(parent_comp, node_name, *type_names):
     )
 
 
+def connect_op(dest, index, source):
+    """Wire source → dest input slot, trying setInput then inputConnectors."""
+    try:
+        dest.setInput(index, source)
+    except AttributeError:
+        dest.inputConnectors[index].connect(source)
+
+
 def build():
     p = me.parent()
 
@@ -58,14 +66,14 @@ def build():
             break
         except AttributeError:
             continue
-    spectrum.setInput(0, audio)
+    connect_op(spectrum, 0, audio)
 
     # Null CHOP: reference point for spectrum data.
     # Expressions use op('spectrum_data')[binIndex]  (0-indexed).
     # With 44100 Hz / 512 FFT: bin n ≈ n × 86 Hz.
     spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
     spec_data.nodeX, spec_data.nodeY = -500, 300
-    spec_data.setInput(0, spectrum)
+    connect_op(spec_data, 0, spectrum)
 
     # ── Band expressions ──────────────────────────────────────────────────────
     # Tune the × multipliers if response is too weak or too strong.
@@ -92,7 +100,7 @@ def build():
     hsv.par.hue.expr        = f"(absTime.seconds * 0.05 + ({MID}) * 0.4) % 1.0"
     hsv.par.saturation.expr = f"0.7 + ({MID})  * 0.5"
     hsv.par.value.expr      = f"0.5 + ({BASS}) * 0.5"
-    hsv.setInput(0, noise)
+    connect_op(hsv, 0, noise)
 
     # ── Feedback loop ─────────────────────────────────────────────────────────
 
@@ -103,23 +111,23 @@ def build():
     fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = -100, 100
     fade.par.brightness.expr = f"0.82 + ({BASS}) * 0.15"
-    fade.setInput(0, feedback)
+    connect_op(fade, 0, feedback)
 
     comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
     comp_fb.nodeX, comp_fb.nodeY = 100, 300
     comp_fb.par.operand = 'add'
-    comp_fb.setInput(0, fade)
-    comp_fb.setInput(1, hsv)
+    connect_op(comp_fb, 0, fade)
+    connect_op(comp_fb, 1, hsv)
     feedback.par.top = comp_fb.name
 
     level_out = create_op(p, 'level_output', 'levelTOP')
     level_out.nodeX, level_out.nodeY = 300, 300
     level_out.par.gamma = 0.85
-    level_out.setInput(0, comp_fb)
+    connect_op(level_out, 0, comp_fb)
 
     output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 500, 300
-    output.setInput(0, level_out)
+    connect_op(output, 0, level_out)
 
     print("=" * 55)
     print("Network 03: Noise Field + Feedback — BUILT in", p.path)

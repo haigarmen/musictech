@@ -43,6 +43,14 @@ def create_op(parent_comp, node_name, *type_names):
     )
 
 
+def connect_op(dest, index, source):
+    """Wire source → dest input slot, trying setInput then inputConnectors."""
+    try:
+        dest.setInput(index, source)
+    except AttributeError:
+        dest.inputConnectors[index].connect(source)
+
+
 def build():
     p = me.parent()
 
@@ -59,11 +67,11 @@ def build():
             break
         except AttributeError:
             continue
-    spectrum.setInput(0, audio)
+    connect_op(spectrum, 0, audio)
 
     spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
     spec_data.nodeX, spec_data.nodeY = -500, 500
-    spec_data.setInput(0, spectrum)
+    connect_op(spec_data, 0, spectrum)
 
     BASS = "clamp((op('spectrum_data')[1]+op('spectrum_data')[2]+op('spectrum_data')[3]+op('spectrum_data')[4])*60, 0, 1)"
     MID  = "clamp((op('spectrum_data')[15]+op('spectrum_data')[25]+op('spectrum_data')[35])*90, 0, 1)"
@@ -89,7 +97,7 @@ def build():
 
     particles = create_op(geo, 'particles', 'particleSOP')
     particles.nodeX, particles.nodeY = -100, 0
-    particles.setInput(0, grid)
+    connect_op(particles, 0, grid)
     particles.par.birthrate.expr   = f"10 + ({BASS}) * 800"
     particles.par.lifespanmax.expr = f"3.0 - ({MID}) * 2.0"
     particles.par.lifespanmin      = 0.3
@@ -115,7 +123,7 @@ def build():
 
     sop_out = create_op(geo, 'geo_out', 'nullSOP')
     sop_out.nodeX, sop_out.nodeY = 100, 0
-    sop_out.setInput(0, particles)
+    connect_op(sop_out, 0, particles)
     sop_out.par.displayflag = True
     sop_out.par.renderflag  = True
 
@@ -148,7 +156,7 @@ def build():
     glow.nodeX, glow.nodeY = 400, 500
     glow.par.size.expr     = f"3 + ({BASS}) * 35"
     glow.par.strength.expr = f"0.3 + ({MID}) * 2.0"
-    glow.setInput(0, render)
+    connect_op(glow, 0, render)
 
     feedback = create_op(p, 'feedback', 'feedbackTOP')
     feedback.nodeX, feedback.nodeY = 400, 300
@@ -156,18 +164,18 @@ def build():
     fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = 600, 300
     fade.par.brightness.expr = f"0.80 + ({BASS}) * 0.16"
-    fade.setInput(0, feedback)
+    connect_op(fade, 0, feedback)
 
     comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
     comp_fb.nodeX, comp_fb.nodeY = 600, 500
     comp_fb.par.operand = 'add'
-    comp_fb.setInput(0, fade)
-    comp_fb.setInput(1, glow)
+    connect_op(comp_fb, 0, fade)
+    connect_op(comp_fb, 1, glow)
     feedback.par.top = comp_fb.name
 
     output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 800, 500
-    output.setInput(0, comp_fb)
+    connect_op(output, 0, comp_fb)
 
     print("=" * 55)
     print("Network 04: 3D Particle System — BUILT in", p.path)

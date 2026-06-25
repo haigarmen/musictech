@@ -45,6 +45,14 @@ def create_op(parent_comp, node_name, *type_names):
     )
 
 
+def connect_op(dest, index, source):
+    """Wire source → dest input slot, trying setInput then inputConnectors."""
+    try:
+        dest.setInput(index, source)
+    except AttributeError:
+        dest.inputConnectors[index].connect(source)
+
+
 def build():
     p = me.parent()
 
@@ -61,11 +69,11 @@ def build():
             break
         except AttributeError:
             continue
-    spectrum.setInput(0, audio)
+    connect_op(spectrum, 0, audio)
 
     spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
     spec_data.nodeX, spec_data.nodeY = -600, 500
-    spec_data.setInput(0, spectrum)
+    connect_op(spec_data, 0, spectrum)
 
     BASS = "clamp((op('spectrum_data')[1]+op('spectrum_data')[2]+op('spectrum_data')[3]+op('spectrum_data')[4])*60, 0, 1)"
     MID  = "clamp((op('spectrum_data')[15]+op('spectrum_data')[25]+op('spectrum_data')[35])*90, 0, 1)"
@@ -89,8 +97,8 @@ def build():
     displace.nodeX, displace.nodeY = -400, 100
     displace.par.displacex.expr = f"0.003 + ({HIGH}) * 0.06"
     displace.par.displacey.expr = f"0.003 + ({HIGH}) * 0.04"
-    displace.setInput(0, vid)
-    displace.setInput(1, disp_noise)
+    connect_op(displace, 0, vid)
+    connect_op(displace, 1, disp_noise)
 
     # ── Effect 2: Hue rotation (MID) ─────────────────────────────────────────
 
@@ -99,7 +107,7 @@ def build():
     hsv.par.hue.expr        = f"(absTime.seconds * 0.02 + ({MID}) * 0.5) % 1.0"
     hsv.par.saturation.expr = f"1.0 + ({MID}) * 0.9"
     hsv.par.value.expr      = f"0.85 + ({BASS}) * 0.3"
-    hsv.setInput(0, displace)
+    connect_op(hsv, 0, displace)
 
     # ── Effect 3: Feedback trail (BASS) ──────────────────────────────────────
 
@@ -110,13 +118,13 @@ def build():
     fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = 0, -100
     fade.par.brightness.expr = f"0.60 + ({BASS}) * 0.34"
-    fade.setInput(0, feedback)
+    connect_op(fade, 0, feedback)
 
     comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
     comp_fb.nodeX, comp_fb.nodeY = 0, 100
     comp_fb.par.operand = 'over'   # try 'add' for bright accumulating glow
-    comp_fb.setInput(0, fade)
-    comp_fb.setInput(1, hsv)
+    connect_op(comp_fb, 0, fade)
+    connect_op(comp_fb, 1, hsv)
     feedback.par.top = comp_fb.name
 
     # ── Post-processing ───────────────────────────────────────────────────────
@@ -125,17 +133,17 @@ def build():
     glow.nodeX, glow.nodeY = 200, 100
     glow.par.size.expr     = f"1 + ({BASS}) * 25"
     glow.par.strength.expr = f"0.05 + ({BASS}) * 0.7"
-    glow.setInput(0, comp_fb)
+    connect_op(glow, 0, comp_fb)
 
     level_out = create_op(p, 'level_output', 'levelTOP')
     level_out.nodeX, level_out.nodeY = 400, 100
     level_out.par.contrast = 1.1
     level_out.par.gamma    = 0.9
-    level_out.setInput(0, glow)
+    connect_op(level_out, 0, glow)
 
     output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 600, 100
-    output.setInput(0, level_out)
+    connect_op(output, 0, level_out)
 
     print("=" * 55)
     print("Network 05: Video + Audio — BUILT in", p.path)
