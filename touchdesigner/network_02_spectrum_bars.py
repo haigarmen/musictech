@@ -4,55 +4,52 @@ Audio-Reactive Motion Graphics — TouchDesigner Network Builder
 
 HOW TO RUN:
   Paste into a Text DAT inside a Base COMP, set Language = Python, Run Script.
-  If you get a NameError, run diagnose.py first.
 """
 
-import builtins as _bt
-try:
-    import td as _td
-except Exception:
-    _td = None
 
-
-def td_op(*names):
-    g = globals()
-    for name in names:
-        t = g.get(name)
-        if t is not None:
-            return t
-        t = getattr(_bt, name, None)
-        if t is not None:
-            return t
-        if _td is not None:
-            t = getattr(_td, name, None)
-            if t is not None:
-                return t
-    return names[0]
-
-
-def create_op(parent_comp, type_name, node_name):
-    op_type = td_op(type_name)
-    if not isinstance(op_type, str):
+def create_op(parent_comp, node_name, *type_names):
+    attempts = list(type_names)
+    for name in type_names:
+        for fam in ('CHOP', 'TOP', 'SOP', 'Comp', 'COMP', 'MAT', 'DAT'):
+            if name.endswith(fam):
+                lc = name[:-len(fam)].lower() + fam
+                if lc not in attempts:
+                    attempts.append(lc)
+                break
+    for name in attempts:
         try:
-            return parent_comp.create(op_type, node_name)
-        except Exception:
-            pass
-    short = type_name
-    for suffix in ('CHOP', 'TOP', 'SOP', 'COMP', 'MAT', 'DAT'):
-        if type_name.endswith(suffix):
-            short = type_name[:-len(suffix)]
-            break
-    for attempt in (short, type_name):
-        try:
-            n = parent_comp.create(attempt, node_name)
+            n = parent_comp.create(name, node_name)
             if n is not None:
                 return n
         except Exception:
             pass
-    raise RuntimeError(
-        f"Cannot create '{type_name}'. Add it manually (right-click → Add Operator"
-        f", search '{short}', rename to '{node_name}'). Run diagnose.py for help."
-    )
+    raise RuntimeError(f"Cannot create '{node_name}'. Tried: {attempts}")
+
+
+def try_create(parent_comp, node_name, *type_names):
+    """Returns None instead of raising if the operator type doesn't exist."""
+    try:
+        return create_op(parent_comp, node_name, *type_names)
+    except RuntimeError:
+        print(f"  Note: '{node_name}' skipped — none of {type_names} exist in this TD build.")
+        return None
+
+
+def connect_op(dest, index, source):
+    """Wire source → dest via inputConnectors; falls back to par.chop/top reference."""
+    try:
+        dest.inputConnectors[index].connect(source)
+        return
+    except (AttributeError, IndexError):
+        pass
+    if index == 0:
+        for _pn in ('chop', 'top', 'choppath', 'toppath'):
+            try:
+                getattr(dest.par, _pn).val = source.path
+                return
+            except AttributeError:
+                continue
+    print(f"  Warning: could not connect {source.name} → {dest.name}[{index}]")
 
 
 def build():
@@ -60,84 +57,90 @@ def build():
 
     # ── Audio → Spectrum ──────────────────────────────────────────────────────
 
-    audio = create_op(p, 'audiodevInCHOP', 'audio_in')
+    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP')
     audio.nodeX, audio.nodeY = -900, 100
 
-    # Spectrum CHOP: FFT → 512 frequency-bin channels
-    spectrum = create_op(p, 'spectrumCHOP', 'spectrum')
+    spectrum = create_op(p, 'spectrum', 'audiospectrumCHOP')
     spectrum.nodeX, spectrum.nodeY = -700, 100
-    spectrum.par.windowsize = 512
-    spectrum.setInput(0, audio)
+    spectrum.par.fftsize = 512
+    connect_op(spectrum, 0, audio)
 
-    spec_data = create_op(p, 'nullCHOP', 'spectrum_data')
+    spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
     spec_data.nodeX, spec_data.nodeY = -500, 100
-    spec_data.setInput(0, spectrum)
+    connect_op(spec_data, 0, spectrum)
 
-    # ── CHOP to TOP: channels → pixels ────────────────────────────────────────
+    # ── CHOP to TOP ───────────────────────────────────────────────────────────
+    # choptoTOP has no wired inputs — connect_op sets par.chop automatically.
 
-    chop_top = create_op(p, 'choptoTOP', 'chop_to_top')
+    chop_top = create_op(p, 'chop_to_top', 'choptoTOP')
     chop_top.nodeX, chop_top.nodeY = -300, 100
-    chop_top.setInput(0, spec_data)
+    connect_op(chop_top, 0, spec_data)
 
     # Rotate 90° so frequency bins run left→right as vertical bars
-    transform = create_op(p, 'transformTOP', 'bars_transform')
+    transform = create_op(p, 'bars_transform', 'transformTOP')
     transform.nodeX, transform.nodeY = -100, 100
-    transform.par.rz = 90
+    transform.par.rotate = 90
     transform.par.sy = 12.0
-    transform.setInput(0, chop_top)
+    connect_op(transform, 0, chop_top)
 
-    # Spectrum values are tiny — amplify hard. Raise to 50–200 if bars invisible.
-    level = create_op(p, 'levelTOP', 'level_amplify')
+    # Amplify — spectrum values are very small. Raise brightness if bars invisible.
+    level = create_op(p, 'level_amplify', 'levelTOP')
     level.nodeX, level.nodeY = 100, 100
-    level.par.brightness = 30.0
-    level.par.gamma      = 0.6
-    level.setInput(0, transform)
+    level.par.brightness1 = 30.0
+    level.par.gamma1      = 0.6
+    connect_op(level, 0, transform)
 
-    # ── Colour ────────────────────────────────────────────────────────────────
+    # ── Colour ramp ───────────────────────────────────────────────────────────
 
-    ramp = create_op(p, 'rampTOP', 'ramp_color')
+    ramp = create_op(p, 'ramp_color', 'rampTOP')
     ramp.nodeX, ramp.nodeY = 100, -100
     ramp.par.type = 'horizontal'
-    # After building: select ramp_color and add colour stops in Parameters
-    # (e.g. black at 0, blue at 0.3, cyan at 0.7, white at 1.0)
 
-    color_mult = create_op(p, 'compositeTOP', 'color_multiply')
+    color_mult = create_op(p, 'color_multiply', 'compositeTOP')
     color_mult.nodeX, color_mult.nodeY = 300, 100
     color_mult.par.operand = 'multiply'
-    color_mult.setInput(0, level)
-    color_mult.setInput(1, ramp)
+    connect_op(color_mult, 0, level)
+    connect_op(color_mult, 1, ramp)
 
-    # ── Energy-driven glow ────────────────────────────────────────────────────
+    # ── Energy glow ───────────────────────────────────────────────────────────
 
-    energy = create_op(p, 'analyzeCHOP', 'analyze_energy')
+    energy = create_op(p, 'analyze_energy', 'analyzeCHOP')
     energy.nodeX, energy.nodeY = -700, -100
     energy.par.function = 'rms'
-    energy.setInput(0, audio)
+    connect_op(energy, 0, audio)
 
-    e_gain = create_op(p, 'mathCHOP', 'energy_gain')
+    e_gain = create_op(p, 'energy_gain', 'mathCHOP')
     e_gain.nodeX, e_gain.nodeY = -500, -100
     e_gain.par.gain = 5.0
-    e_gain.setInput(0, energy)
+    connect_op(e_gain, 0, energy)
 
-    e_data = create_op(p, 'nullCHOP', 'energy_data')
+    e_data = create_op(p, 'energy_data', 'nullCHOP')
     e_data.nodeX, e_data.nodeY = -300, -100
-    e_data.setInput(0, e_gain)
+    connect_op(e_data, 0, e_gain)
 
-    glow = create_op(p, 'glowTOP', 'glow')
-    glow.nodeX, glow.nodeY = 500, 100
-    glow.par.size.expr     = "3 + op('energy_data')[0] * 20"
-    glow.par.strength.expr = "0.2 + op('energy_data')[0] * 1.5"
-    glow.setInput(0, color_mult)
+    prev_top = color_mult
 
-    output = create_op(p, 'nullTOP', 'OUTPUT')
+    glow = try_create(p, 'glow', 'glowTOP', 'bloomTOP')
+    if glow is not None:
+        glow.nodeX, glow.nodeY = 500, 100
+        try:
+            glow.par.size.expr     = "3 + op('energy_data')[0] * 20"
+            glow.par.strength.expr = "0.2 + op('energy_data')[0] * 1.5"
+        except AttributeError:
+            pass
+        connect_op(glow, 0, color_mult)
+        prev_top = glow
+
+    output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 700, 100
-    output.setInput(0, glow)
+    connect_op(output, 0, prev_top)
 
     print("=" * 55)
     print("Network 02: Spectrum Bars — BUILT in", p.path)
     print()
     print("→ Right-click OUTPUT → View")
-    print("→ Bars invisible: select level_amplify, raise Brightness (50–200)")
+    print("→ audio_in red: click it → Parameters → pick your mic")
+    print("→ Bars invisible: select level_amplify, raise Brightness1 (50–200)")
     print("→ Customize colours: select ramp_color, add colour stops")
     print("=" * 55)
 
