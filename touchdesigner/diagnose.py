@@ -1,108 +1,93 @@
 """
-TouchDesigner Operator Type Diagnostic
-=======================================
-Run this FIRST if any network script fails with NameError.
+TouchDesigner Operator Parameter Diagnostic — v3
+=================================================
+Run this script ONCE to get all the information needed to fix the network scripts.
 
 HOW TO RUN:
-  1. Create a Text DAT anywhere in your project
-  2. Paste this script, set Language = Python, Run Script
-  3. The output will appear in the Textport (Alt+T)
-  4. Share or read the output to understand what's available
-     in your specific TouchDesigner build.
+  1. Create a Text DAT anywhere in your project (NOT inside a Base COMP)
+  2. Paste this entire script, set Language = Python, Run Script
+  3. The output appears in the Textport (Alt+T)
+  4. Copy the full output and share it
 """
 
-print("=" * 60)
-print("TouchDesigner Python Environment Diagnostic")
-print("=" * 60)
+print("=" * 65)
+print("TouchDesigner Parameter Diagnostic  v3")
+print("=" * 65)
 
-# 1. Confirm we are inside TD's Python environment
-print(f"\n1. Running inside TouchDesigner: {'me' in dir()}")
-try:
-    print(f"   This DAT:       {me}")
-    print(f"   Parent COMP:    {me.parent()}")
-except Exception as e:
-    print(f"   'me' access failed: {e}")
 
-# 2. Scan globals() for OP type constants
-g = globals()
-chops_g = sorted(k for k in g if k.endswith('CHOP'))
-tops_g  = sorted(k for k in g if k.endswith('TOP'))
-sops_g  = sorted(k for k in g if k.endswith('SOP'))
-print(f"\n2. OP types found in globals():")
-print(f"   CHOP count: {len(chops_g)}   sample: {chops_g[:4]}")
-print(f"   TOP count:  {len(tops_g)}    sample: {tops_g[:4]}")
-print(f"   SOP count:  {len(sops_g)}    sample: {sops_g[:4]}")
-
-# 3. Scan the td module
-print(f"\n3. Scanning the 'td' module:")
-try:
-    import td as _td
-    chops_td = sorted(k for k in dir(_td) if k.endswith('CHOP'))
-    tops_td  = sorted(k for k in dir(_td) if k.endswith('TOP'))
-    print(f"   CHOP count: {len(chops_td)}   sample: {chops_td[:4]}")
-    print(f"   TOP count:  {len(tops_td)}    sample: {tops_td[:4]}")
-    print(f"   td.audiodevInCHOP exists: {hasattr(_td, 'audiodevInCHOP')}")
-    print(f"   td.mathCHOP exists:       {hasattr(_td, 'mathCHOP')}")
-except Exception as e:
-    print(f"   import td failed: {e}")
-
-# 4. Scan builtins
-import builtins as _bt
-chops_bt = sorted(k for k in dir(_bt) if k.endswith('CHOP'))
-tops_bt  = sorted(k for k in dir(_bt) if k.endswith('TOP'))
-print(f"\n4. OP types found in builtins:")
-print(f"   CHOP count: {len(chops_bt)}   sample: {chops_bt[:4]}")
-print(f"   TOP count:  {len(tops_bt)}    sample: {tops_bt[:4]}")
-
-# 5. Audio-specific search across all sources
-print(f"\n5. Everything containing 'audio' (any case) across all sources:")
-audio_g  = [x for x in g    if 'audio' in x.lower()]
-audio_bt = [x for x in dir(_bt) if 'audio' in x.lower()]
-try:
-    import td as _td2
-    audio_td = [x for x in dir(_td2) if 'audio' in x.lower()]
-except Exception:
-    audio_td = []
-print(f"   globals():  {audio_g}")
-print(f"   builtins:   {audio_bt}")
-print(f"   td module:  {audio_td}")
-
-# 6. Test string-based operator creation (does TD accept type as a string?)
-print(f"\n6. Testing string-based create() on me.parent():")
-try:
-    test_op = me.parent().create('math', '_diag_test')
-    print(f"   create('math', ...) WORKED → op type string IS supported")
-    test_op.destroy()
-except Exception as e:
-    print(f"   create('math', ...) failed: {e}")
-
-try:
-    test_op = me.parent().create('mathCHOP', '_diag_test2')
-    print(f"   create('mathCHOP', ...) WORKED → full type string supported")
-    test_op.destroy()
-except Exception as e:
-    print(f"   create('mathCHOP', ...) failed: {e}")
-
-# 7. Audio Spectrum CHOP — probing window-size parameter name:
-print(f"\n7. Audio Spectrum CHOP — probing window-size parameter name:")
-_sp = None
-for _sptype in ('audiospectrumCHOP', 'spectrumCHOP'):
+def probe(type_name, node_name='_probe_tmp'):
+    """Create an operator, print its parameters, destroy it. Returns par list."""
+    p = me.parent()
     try:
-        _sp = me.parent().create(_sptype, '_diag_spectrum')
-        print(f"   Created using type string: '{_sptype}'")
-        break
-    except Exception as _e:
-        print(f"   '{_sptype}' failed: {_e}")
-if _sp is not None:
-    for _candidate in ('winsize', 'windowsize', 'fftsize', 'window'):
-        if hasattr(_sp.par, _candidate):
-            print(f"   '{_candidate}' EXISTS <- use this")
-        else:
-            print(f"   '{_candidate}' not found")
-    _sp.destroy()
-else:
-    print("   Could not create any spectrum CHOP variant")
+        o = p.create(type_name, node_name)
+    except Exception as e:
+        print(f"  COULD NOT CREATE: {e}")
+        return None
 
-print("\n" + "=" * 60)
-print("Paste this full output when reporting issues.")
-print("=" * 60)
+    # Group parameters by page
+    pages = {}
+    for par in o.pars():
+        pg = par.page.name if hasattr(par, 'page') else '?'
+        pages.setdefault(pg, []).append(par.name)
+
+    for pg, names in sorted(pages.items()):
+        print(f"    [{pg}] {names}")
+
+    # Test connection methods
+    conn_info = []
+    if hasattr(o, 'setInput'):
+        conn_info.append('setInput=YES')
+    else:
+        conn_info.append('setInput=NO')
+    ic_len = len(o.inputConnectors) if hasattr(o, 'inputConnectors') else -1
+    conn_info.append(f'inputConnectors.len={ic_len}')
+    print(f"    connection: {', '.join(conn_info)}")
+
+    o.destroy()
+    return [p.name for p in o.pars()] if False else None   # pars already printed
+
+
+# ── Operators used in all 5 network scripts ──────────────────────────────────
+
+_ops = [
+    'audiodeviceinCHOP',
+    'audiospectrumCHOP',
+    'analyzeCHOP',
+    'mathCHOP',
+    'nullCHOP',
+    'choptoTOP',
+    'levelTOP',
+    'noiseTOP',
+    'hsvAdjustTOP',
+    'feedbackTOP',
+    'compositeTOP',
+    'glowTOP',
+    'nullTOP',
+    'circleTOP',
+    'transformTOP',
+    'rampTOP',
+    'renderTOP',
+    'displaceTOP',
+    'videodeviceinTOP',
+]
+
+for _op_type in _ops:
+    print(f"\n── {_op_type} ──────────────────────────────────────────────")
+    probe(_op_type)
+
+# ── Operators used only in network 04 (inside geoComp) ───────────────────────
+
+print("\n── geoComp (3D objects — network 04 only) ─────────────────────────────")
+_p = me.parent()
+try:
+    _geo = _p.create('geoComp', '_probe_geo')
+    for _inner_type in ('gridSOP', 'particleSOP', 'nullSOP'):
+        print(f"\n  inside geoComp → {_inner_type}:")
+        probe(_inner_type, '_probe_inner')
+    _geo.destroy()
+except Exception as _e:
+    print(f"  geoComp failed: {_e}")
+
+print("\n" + "=" * 65)
+print("END OF DIAGNOSTIC — paste this full output to fix all scripts at once.")
+print("=" * 65)
