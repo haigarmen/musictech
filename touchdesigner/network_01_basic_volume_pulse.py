@@ -16,11 +16,6 @@ WHAT GETS BUILT:
 
 
 def create_op(parent_comp, node_name, *type_names):
-    """
-    Create a TD operator using string-based creation (confirmed working in TD 2025+).
-    Tries each provided type name, then auto-tries an all-lowercase variant
-    of the operator-name part (e.g. hsvAdjustTOP → hsvadjustTOP).
-    """
     attempts = list(type_names)
     for name in type_names:
         for fam in ('CHOP', 'TOP', 'SOP', 'Comp', 'COMP', 'MAT', 'DAT'):
@@ -29,7 +24,6 @@ def create_op(parent_comp, node_name, *type_names):
                 if lc not in attempts:
                     attempts.append(lc)
                 break
-
     for name in attempts:
         try:
             n = parent_comp.create(name, node_name)
@@ -37,35 +31,27 @@ def create_op(parent_comp, node_name, *type_names):
                 return n
         except Exception:
             pass
-
     raise RuntimeError(
         f"Cannot create '{node_name}'. Tried: {attempts}\n"
-        f"Add manually: right-click → Add Operator, search for the operator,\n"
-        f"rename it to '{node_name}'. Run diagnose.py for environment info."
+        f"Add manually: right-click → Add Operator, search, rename to '{node_name}'."
     )
 
 
 def connect_op(dest, index, source):
-    """Wire source → dest, trying setInput, inputConnectors, then par reference."""
-    try:
-        dest.setInput(index, source)
-        return
-    except AttributeError:
-        pass
+    """Wire source → dest via inputConnectors; falls back to par.chop/top reference."""
     try:
         dest.inputConnectors[index].connect(source)
         return
     except (AttributeError, IndexError):
         pass
-    # Operators like choptoTOP/audiospectrumCHOP use a parameter reference
-    candidates = ('chop', 'top', 'choppath', 'toppath') if index == 0 else ('chop2', 'top2')
-    for par_name in candidates:
-        try:
-            getattr(dest.par, par_name).val = source.path
-            return
-        except AttributeError:
-            continue
-    print(f"  Warning: could not connect {source.name} to {dest.name}[{index}]")
+    if index == 0:
+        for _pn in ('chop', 'top', 'choppath', 'toppath'):
+            try:
+                getattr(dest.par, _pn).val = source.path
+                return
+            except AttributeError:
+                continue
+    print(f"  Warning: could not connect {source.name} → {dest.name}[{index}]")
 
 
 def build():
@@ -73,17 +59,14 @@ def build():
 
     # ── CHOP: audio analysis ──────────────────────────────────────────────────
 
-    # TD 2025 name: audiodeviceinCHOP  (older builds: audiodevInCHOP)
-    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP', 'audiodevInCHOP')
+    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP')
     audio.nodeX, audio.nodeY = -700, 100
-    # If 'audio_in' shows a red cook error: click it → Parameters → pick Device.
 
     rms = create_op(p, 'analyze_rms', 'analyzeCHOP')
     rms.nodeX, rms.nodeY = -500, 100
     rms.par.function = 'rms'
     connect_op(rms, 0, audio)
 
-    # Increase Gain if the circle barely reacts (try 10, 20, 50).
     gain = create_op(p, 'math_gain', 'mathCHOP')
     gain.nodeX, gain.nodeY = -300, 100
     gain.par.gain = 5.0
@@ -95,18 +78,17 @@ def build():
 
     # ── TOP: visuals ──────────────────────────────────────────────────────────
 
-    # Radius grows from 0.05 (silence) to 0.45 (full volume).
     circle = create_op(p, 'circle_pulse', 'circleTOP')
     circle.nodeX, circle.nodeY = -500, -200
-    circle.par.radx.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
-    circle.par.rady.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
-    circle.par.colorr = 0.9
-    circle.par.colorg = 0.2
-    circle.par.colorb = 1.0
+    circle.par.radiusx.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
+    circle.par.radiusy.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
+    circle.par.fillcolorr = 0.9
+    circle.par.fillcolorg = 0.2
+    circle.par.fillcolorb = 1.0
 
     level = create_op(p, 'level_brightness', 'levelTOP')
     level.nodeX, level.nodeY = -300, -200
-    level.par.brightness.expr = "0.4 + op('audio_data')[0] * 1.5"
+    level.par.brightness1.expr = "0.4 + op('audio_data')[0] * 1.5"
     connect_op(level, 0, circle)
 
     output = create_op(p, 'OUTPUT', 'nullTOP')
@@ -118,8 +100,7 @@ def build():
     print()
     print("→ Right-click OUTPUT → View")
     print("→ audio_in red: click it → Parameters → pick your mic")
-    print("→ Circle not moving: select math_gain, raise Gain")
-    print("  (try 10, 20, 50 depending on your mic level)")
+    print("→ Circle not moving: select math_gain, raise Gain (try 10–50)")
     print("=" * 55)
 
 

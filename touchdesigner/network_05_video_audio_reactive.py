@@ -4,7 +4,6 @@ Audio-Reactive Motion Graphics — TouchDesigner Network Builder
 
 HOW TO RUN:
   Paste into a Text DAT inside a Base COMP, set Language = Python, Run Script.
-  If you get a NameError, run diagnose.py first.
   After building: select 'video_in' → Parameters → set Device to your webcam.
 
 THREE-BAND EFFECTS:
@@ -17,10 +16,6 @@ VIDEO_DEVICE_INDEX = 0    # 0 = first camera. Change if needed.
 
 
 def create_op(parent_comp, node_name, *type_names):
-    """
-    Create a TD operator using string-based creation (confirmed working in TD 2025+).
-    Tries each provided type name, then auto-tries an all-lowercase variant.
-    """
     attempts = list(type_names)
     for name in type_names:
         for fam in ('CHOP', 'TOP', 'SOP', 'Comp', 'COMP', 'MAT', 'DAT'):
@@ -29,7 +24,6 @@ def create_op(parent_comp, node_name, *type_names):
                 if lc not in attempts:
                     attempts.append(lc)
                 break
-
     for name in attempts:
         try:
             n = parent_comp.create(name, node_name)
@@ -37,35 +31,33 @@ def create_op(parent_comp, node_name, *type_names):
                 return n
         except Exception:
             pass
+    raise RuntimeError(f"Cannot create '{node_name}'. Tried: {attempts}")
 
-    raise RuntimeError(
-        f"Cannot create '{node_name}'. Tried: {attempts}\n"
-        f"Add manually: right-click → Add Operator, search for the operator,\n"
-        f"rename it to '{node_name}'. Run diagnose.py for environment info."
-    )
+
+def try_create(parent_comp, node_name, *type_names):
+    """Returns None instead of raising if the operator type doesn't exist."""
+    try:
+        return create_op(parent_comp, node_name, *type_names)
+    except RuntimeError:
+        print(f"  Note: '{node_name}' skipped — none of {type_names} exist in this TD build.")
+        return None
 
 
 def connect_op(dest, index, source):
-    """Wire source → dest, trying setInput, inputConnectors, then par reference."""
-    try:
-        dest.setInput(index, source)
-        return
-    except AttributeError:
-        pass
+    """Wire source → dest via inputConnectors; falls back to par.chop/top reference."""
     try:
         dest.inputConnectors[index].connect(source)
         return
     except (AttributeError, IndexError):
         pass
-    # Operators like choptoTOP/audiospectrumCHOP use a parameter reference
-    candidates = ('chop', 'top', 'choppath', 'toppath') if index == 0 else ('chop2', 'top2')
-    for par_name in candidates:
-        try:
-            getattr(dest.par, par_name).val = source.path
-            return
-        except AttributeError:
-            continue
-    print(f"  Warning: could not connect {source.name} to {dest.name}[{index}]")
+    if index == 0:
+        for _pn in ('chop', 'top', 'choppath', 'toppath'):
+            try:
+                getattr(dest.par, _pn).val = source.path
+                return
+            except AttributeError:
+                continue
+    print(f"  Warning: could not connect {source.name} → {dest.name}[{index}]")
 
 
 def build():
@@ -73,17 +65,12 @@ def build():
 
     # ── Audio + Spectrum ──────────────────────────────────────────────────────
 
-    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP', 'audiodevInCHOP')
+    audio = create_op(p, 'audio_in', 'audiodeviceinCHOP')
     audio.nodeX, audio.nodeY = -1000, 500
 
-    spectrum = create_op(p, 'spectrum', 'audiospectrumCHOP', 'spectrumCHOP')
+    spectrum = create_op(p, 'spectrum', 'audiospectrumCHOP')
     spectrum.nodeX, spectrum.nodeY = -800, 500
-    for _wp in ('winsize', 'windowsize', 'fftsize', 'window'):
-        try:
-            getattr(spectrum.par, _wp).val = 512
-            break
-        except AttributeError:
-            continue
+    spectrum.par.fftsize = 512
     connect_op(spectrum, 0, audio)
 
     spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
@@ -96,11 +83,16 @@ def build():
 
     # ── Live video ────────────────────────────────────────────────────────────
 
-    vid = create_op(p, 'video_in', 'videodeviceinTOP', 'videodevInTOP')
+    vid = create_op(p, 'video_in', 'videodeviceinTOP')
     vid.nodeX, vid.nodeY = -600, 100
-    vid.par.device = VIDEO_DEVICE_INDEX
+    for _dp in ('device', 'deviceindex', 'devicenum'):
+        try:
+            getattr(vid.par, _dp).val = VIDEO_DEVICE_INDEX
+            break
+        except AttributeError:
+            continue
 
-    # ── Effect 1: Displacement (HIGH) ─────────────────────────────────────────
+    # ── Effect 1: Displacement (HIGH) ────────────────────────────────────────
 
     disp_noise = create_op(p, 'disp_noise', 'noiseTOP')
     disp_noise.nodeX, disp_noise.nodeY = -600, -100
@@ -110,19 +102,26 @@ def build():
 
     displace = create_op(p, 'displace_high', 'displaceTOP')
     displace.nodeX, displace.nodeY = -400, 100
-    displace.par.displacex.expr = f"0.003 + ({HIGH}) * 0.06"
-    displace.par.displacey.expr = f"0.003 + ({HIGH}) * 0.04"
+    # TD 2025: displaceweightx / displaceweighty (not displacex / displacey)
+    displace.par.displaceweightx.expr = f"0.003 + ({HIGH}) * 0.06"
+    displace.par.displaceweighty.expr = f"0.003 + ({HIGH}) * 0.04"
     connect_op(displace, 0, vid)
     connect_op(displace, 1, disp_noise)
 
-    # ── Effect 2: Hue rotation (MID) ─────────────────────────────────────────
+    # ── Effect 2: Hue rotation (MID, gracefully skipped if unavailable) ───────
 
-    hsv = create_op(p, 'hsv_shift', 'hsvAdjustTOP')
-    hsv.nodeX, hsv.nodeY = -200, 100
-    hsv.par.hue.expr        = f"(absTime.seconds * 0.02 + ({MID}) * 0.5) % 1.0"
-    hsv.par.saturation.expr = f"1.0 + ({MID}) * 0.9"
-    hsv.par.value.expr      = f"0.85 + ({BASS}) * 0.3"
-    connect_op(hsv, 0, displace)
+    prev_top = displace
+    hsv = try_create(p, 'hsv_shift', 'hsvAdjustTOP')
+    if hsv is not None:
+        hsv.nodeX, hsv.nodeY = -200, 100
+        try:
+            hsv.par.hue.expr        = f"(absTime.seconds * 0.02 + ({MID}) * 0.5) % 1.0"
+            hsv.par.saturation.expr = f"1.0 + ({MID}) * 0.9"
+            hsv.par.value.expr      = f"0.85 + ({BASS}) * 0.3"
+        except AttributeError:
+            pass
+        connect_op(hsv, 0, displace)
+        prev_top = hsv
 
     # ── Effect 3: Feedback trail (BASS) ──────────────────────────────────────
 
@@ -132,29 +131,42 @@ def build():
     # 0.60 = fast decay (crisp). 0.94 = slow decay (heavy trails).
     fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = 0, -100
-    fade.par.brightness.expr = f"0.60 + ({BASS}) * 0.34"
+    fade.par.brightness1.expr = f"0.60 + ({BASS}) * 0.34"
     connect_op(fade, 0, feedback)
 
     comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
     comp_fb.nodeX, comp_fb.nodeY = 0, 100
-    comp_fb.par.operand = 'over'   # try 'add' for bright accumulating glow
+    comp_fb.par.operand = 'over'
     connect_op(comp_fb, 0, fade)
-    connect_op(comp_fb, 1, hsv)
+    connect_op(comp_fb, 1, prev_top)
     feedback.par.top = comp_fb.name
 
     # ── Post-processing ───────────────────────────────────────────────────────
 
-    glow = create_op(p, 'glow', 'glowTOP')
-    glow.nodeX, glow.nodeY = 200, 100
-    glow.par.size.expr     = f"1 + ({BASS}) * 25"
-    glow.par.strength.expr = f"0.05 + ({BASS}) * 0.7"
-    connect_op(glow, 0, comp_fb)
+    post_top = comp_fb
+
+    glow = try_create(p, 'glow', 'glowTOP')
+    if glow is not None:
+        glow.nodeX, glow.nodeY = 200, 100
+        try:
+            glow.par.size.expr     = f"1 + ({BASS}) * 25"
+            glow.par.strength.expr = f"0.05 + ({BASS}) * 0.7"
+        except AttributeError:
+            pass
+        connect_op(glow, 0, comp_fb)
+        post_top = glow
 
     level_out = create_op(p, 'level_output', 'levelTOP')
     level_out.nodeX, level_out.nodeY = 400, 100
-    level_out.par.contrast = 1.1
-    level_out.par.gamma    = 0.9
-    connect_op(level_out, 0, glow)
+    # TD 2025: contrast1 / gamma1 (not contrast / gamma)
+    for _cp in ('contrast1', 'contrast'):
+        try:
+            getattr(level_out.par, _cp).val = 1.1
+            break
+        except AttributeError:
+            continue
+    level_out.par.gamma1 = 0.9
+    connect_op(level_out, 0, post_top)
 
     output = create_op(p, 'OUTPUT', 'nullTOP')
     output.nodeX, output.nodeY = 600, 100
