@@ -27,7 +27,7 @@ def probe(type_name, node_name='_probe_tmp'):
     # Group parameters by page
     pages = {}
     for par in o.pars():
-        pg = par.page.name if hasattr(par, 'page') else '?'
+        pg = par.page.name if (hasattr(par, 'page') and par.page is not None) else '?'
         pages.setdefault(pg, []).append(par.name)
 
     for pg, names in sorted(pages.items()):
