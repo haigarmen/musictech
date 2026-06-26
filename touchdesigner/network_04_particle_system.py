@@ -8,8 +8,9 @@ HOW TO RUN:
 AFTER BUILDING — REQUIRED MANUAL STEP:
   Select 'particle_geo' → Parameters → Render tab → set Material to 'phong_mat'.
 
-THREE-BAND CONTROL:
-  Bass  → birth rate    Mid  → velocity + colour    High → turbulence
+AUDIO CONTROL:
+  Overall energy (RMS) drives birth rate, velocity, colour and turbulence.
+  Louder audio = more particles, faster movement, more chaotic motion.
 
 NOTE: If 'particle_geo' is skipped (geoComp unavailable via script), create it
 manually: right-click → Add Operator → Geometry COMP, rename to 'particle_geo'.
@@ -65,24 +66,28 @@ def connect_op(dest, index, source):
 def build():
     p = me.parent()
 
-    # ── Audio + Spectrum ──────────────────────────────────────────────────────
+    # ── Audio analysis — RMS (same pattern as Network 01, confirmed working) ───
+    # op('rms_data')[0]  →  0.0 (silence) … 1.0 (loud)
 
     audio = create_op(p, 'audio_in', 'audiodeviceinCHOP')
     audio.nodeX, audio.nodeY = -900, 500
 
-    spectrum = create_op(p, 'spectrum', 'audiospectrumCHOP')
-    spectrum.nodeX, spectrum.nodeY = -700, 500
-    spectrum.par.fftsize = 512
-    connect_op(spectrum, 0, audio)
+    rms = create_op(p, 'analyze_rms', 'analyzeCHOP')
+    rms.nodeX, rms.nodeY = -700, 500
+    rms.par.function = 'rms'
+    connect_op(rms, 0, audio)
 
-    spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
-    spec_data.nodeX, spec_data.nodeY = -500, 500
-    connect_op(spec_data, 0, spectrum)
+    rms_gain = create_op(p, 'rms_gain', 'mathCHOP')
+    rms_gain.nodeX, rms_gain.nodeY = -500, 500
+    rms_gain.par.gain = 8.0
+    connect_op(rms_gain, 0, rms)
 
-    # spectrum_data has 1 channel; frequency bins are samples: [0][bin_index]
-    BASS = "min(1.0, max(0.0, (op('spectrum_data')[0][1]+op('spectrum_data')[0][2]+op('spectrum_data')[0][3]+op('spectrum_data')[0][4])*60))"
-    MID  = "min(1.0, max(0.0, (op('spectrum_data')[0][15]+op('spectrum_data')[0][25]+op('spectrum_data')[0][35])*90))"
-    HIGH = "min(1.0, max(0.0, (op('spectrum_data')[0][60]+op('spectrum_data')[0][90]+op('spectrum_data')[0][120])*120))"
+    rms_data = create_op(p, 'rms_data', 'nullCHOP')
+    rms_data.nodeX, rms_data.nodeY = -300, 500
+    connect_op(rms_data, 0, rms_gain)
+
+    # Single expression reference — op('rms_data')[0] is a plain float, always safe
+    E = "min(1.0, max(0.0, op('rms_data')[0]))"
 
     # ── Phong material ────────────────────────────────────────────────────────
 
@@ -90,9 +95,9 @@ def build():
     if mat is not None:
         mat.nodeX, mat.nodeY = -300, 300
         try:
-            mat.par.emitcolorr.expr = f"0.1 + ({MID})  * 0.9"
-            mat.par.emitcolorg.expr = f"0.3 + ({HIGH}) * 0.7"
-            mat.par.emitcolorb.expr = f"1.0 - ({BASS}) * 0.7"
+            mat.par.emitcolorr.expr = f"0.1 + ({E}) * 0.9"
+            mat.par.emitcolorg.expr = f"0.3 + ({E}) * 0.5"
+            mat.par.emitcolorb.expr = f"1.0 - ({E}) * 0.7"
         except AttributeError:
             pass
 
@@ -123,14 +128,14 @@ def build():
             if grid is not None:
                 connect_op(particles, 0, grid)
             try:
-                particles.par.birthrate.expr   = f"10 + ({BASS}) * 800"
-                particles.par.lifespanmax.expr = f"3.0 - ({MID}) * 2.0"
+                particles.par.birthrate.expr   = f"10 + ({E}) * 800"
+                particles.par.lifespanmax.expr = f"3.0 - ({E}) * 2.0"
                 particles.par.lifespanmin      = 0.3
             except AttributeError:
                 pass
             for vel_par in ('vy', 'vely', 'velocitiesy'):
                 try:
-                    getattr(particles.par, vel_par).expr = f"0.3 + ({MID}) * 2.5"
+                    getattr(particles.par, vel_par).expr = f"0.3 + ({E}) * 2.5"
                     break
                 except AttributeError:
                     continue
@@ -138,7 +143,7 @@ def build():
                 print("  Note: Y-velocity param not found — set it manually on 'particles'")
             for turb_par in ('turbulencer', 'turb', 'turbulence'):
                 try:
-                    getattr(particles.par, turb_par).expr = f"0.05 + ({HIGH}) * 3.0"
+                    getattr(particles.par, turb_par).expr = f"0.05 + ({E}) * 3.0"
                     break
                 except AttributeError:
                     continue
@@ -210,8 +215,8 @@ def build():
     if glow is not None:
         glow.nodeX, glow.nodeY = 400, 500
         try:
-            glow.par.size.expr     = f"3 + ({BASS}) * 35"
-            glow.par.strength.expr = f"0.3 + ({MID}) * 2.0"
+            glow.par.size.expr     = f"3 + ({E}) * 35"
+            glow.par.strength.expr = f"0.3 + ({E}) * 2.0"
         except AttributeError:
             pass
         connect_op(glow, 0, render)
@@ -222,7 +227,7 @@ def build():
 
     fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = 600, 300
-    fade.par.brightness1.expr = f"0.80 + ({BASS}) * 0.16"
+    fade.par.brightness1.expr = f"0.80 + ({E}) * 0.16"
     connect_op(fade, 0, feedback)
 
     comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
@@ -246,6 +251,7 @@ def build():
     print("→ Right-click OUTPUT → View")
     print("→ audio_in red: click it → Parameters → pick your mic")
     print("→ Black render: check render_scene Camera/Lights, move camera back")
+    print("→ Not moving: select rms_gain, raise Gain (try 20–50)")
     print("=" * 55)
 
 

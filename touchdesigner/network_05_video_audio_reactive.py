@@ -6,10 +6,9 @@ HOW TO RUN:
   Paste into a Text DAT inside a Base COMP, set Language = Python, Run Script.
   After building: select 'video_in' → Parameters → set Device to your webcam.
 
-THREE-BAND EFFECTS:
-  BASS  → Feedback depth   (ghost trails on kick/bass hits)
-  MID   → Hue rotation     (colour shifts on melody)
-  HIGH  → Pixel ripple     (displacement jitter on transients)
+AUDIO CONTROL:
+  Overall energy (RMS) drives all three effects simultaneously:
+  Louder audio → more displacement ripple + stronger hue shift + longer trails
 """
 
 VIDEO_DEVICE_INDEX = 0    # 0 = first camera. Change if needed.
@@ -63,24 +62,28 @@ def connect_op(dest, index, source):
 def build():
     p = me.parent()
 
-    # ── Audio + Spectrum ──────────────────────────────────────────────────────
+    # ── Audio analysis — RMS (same pattern as Network 01, confirmed working) ───
+    # op('rms_data')[0]  →  0.0 (silence) … 1.0 (loud)
 
     audio = create_op(p, 'audio_in', 'audiodeviceinCHOP')
     audio.nodeX, audio.nodeY = -1000, 500
 
-    spectrum = create_op(p, 'spectrum', 'audiospectrumCHOP')
-    spectrum.nodeX, spectrum.nodeY = -800, 500
-    spectrum.par.fftsize = 512
-    connect_op(spectrum, 0, audio)
+    rms = create_op(p, 'analyze_rms', 'analyzeCHOP')
+    rms.nodeX, rms.nodeY = -800, 500
+    rms.par.function = 'rms'
+    connect_op(rms, 0, audio)
 
-    spec_data = create_op(p, 'spectrum_data', 'nullCHOP')
-    spec_data.nodeX, spec_data.nodeY = -600, 500
-    connect_op(spec_data, 0, spectrum)
+    rms_gain = create_op(p, 'rms_gain', 'mathCHOP')
+    rms_gain.nodeX, rms_gain.nodeY = -600, 500
+    rms_gain.par.gain = 8.0
+    connect_op(rms_gain, 0, rms)
 
-    # spectrum_data has 1 channel; frequency bins are samples: [0][bin_index]
-    BASS = "min(1.0, max(0.0, (op('spectrum_data')[0][1]+op('spectrum_data')[0][2]+op('spectrum_data')[0][3]+op('spectrum_data')[0][4])*60))"
-    MID  = "min(1.0, max(0.0, (op('spectrum_data')[0][15]+op('spectrum_data')[0][25]+op('spectrum_data')[0][35])*90))"
-    HIGH = "min(1.0, max(0.0, (op('spectrum_data')[0][60]+op('spectrum_data')[0][90]+op('spectrum_data')[0][120])*120))"
+    rms_data = create_op(p, 'rms_data', 'nullCHOP')
+    rms_data.nodeX, rms_data.nodeY = -400, 500
+    connect_op(rms_data, 0, rms_gain)
+
+    # Single expression reference — op('rms_data')[0] is a plain float, always safe
+    E = "min(1.0, max(0.0, op('rms_data')[0]))"
 
     # ── Live video ────────────────────────────────────────────────────────────
 
@@ -93,38 +96,38 @@ def build():
         except AttributeError:
             continue
 
-    # ── Effect 1: Displacement (HIGH) ────────────────────────────────────────
+    # ── Effect 1: Displacement (audio energy → pixel ripple) ─────────────────
 
     disp_noise = create_op(p, 'disp_noise', 'noiseTOP')
     disp_noise.nodeX, disp_noise.nodeY = -600, -100
     disp_noise.par.tx.expr    = "absTime.seconds * 0.15"
     disp_noise.par.ty.expr    = "absTime.seconds * 0.09"
-    disp_noise.par.rough.expr = f"0.5 + ({HIGH}) * 0.45"
+    disp_noise.par.rough.expr = f"0.5 + ({E}) * 0.45"
 
-    displace = create_op(p, 'displace_high', 'displaceTOP')
+    displace = create_op(p, 'displace_effect', 'displaceTOP')
     displace.nodeX, displace.nodeY = -400, 100
     # TD 2025: displaceweightx / displaceweighty (not displacex / displacey)
-    displace.par.displaceweightx.expr = f"0.003 + ({HIGH}) * 0.06"
-    displace.par.displaceweighty.expr = f"0.003 + ({HIGH}) * 0.04"
+    displace.par.displaceweightx.expr = f"0.003 + ({E}) * 0.06"
+    displace.par.displaceweighty.expr = f"0.003 + ({E}) * 0.04"
     connect_op(displace, 0, vid)
     connect_op(displace, 1, disp_noise)
 
-    # ── Effect 2: Hue rotation (MID, gracefully skipped if unavailable) ───────
+    # ── Effect 2: Hue rotation (gracefully skipped if unavailable) ────────────
 
     prev_top = displace
     hsv = try_create(p, 'hsv_shift', 'hsvAdjustTOP')
     if hsv is not None:
         hsv.nodeX, hsv.nodeY = -200, 100
         try:
-            hsv.par.hue.expr        = f"(absTime.seconds * 0.02 + ({MID}) * 0.5) % 1.0"
-            hsv.par.saturation.expr = f"1.0 + ({MID}) * 0.9"
-            hsv.par.value.expr      = f"0.85 + ({BASS}) * 0.3"
+            hsv.par.hue.expr        = f"(absTime.seconds * 0.02 + ({E}) * 0.5) % 1.0"
+            hsv.par.saturation.expr = f"1.0 + ({E}) * 0.9"
+            hsv.par.value.expr      = f"0.85 + ({E}) * 0.3"
         except AttributeError:
             pass
         connect_op(hsv, 0, displace)
         prev_top = hsv
 
-    # ── Effect 3: Feedback trail (BASS) ──────────────────────────────────────
+    # ── Effect 3: Feedback trail (audio energy → ghost trails) ───────────────
 
     feedback = create_op(p, 'feedback', 'feedbackTOP')
     feedback.nodeX, feedback.nodeY = -200, -100
@@ -132,7 +135,7 @@ def build():
     # 0.60 = fast decay (crisp). 0.94 = slow decay (heavy trails).
     fade = create_op(p, 'feedback_fade', 'levelTOP')
     fade.nodeX, fade.nodeY = 0, -100
-    fade.par.brightness1.expr = f"0.60 + ({BASS}) * 0.34"
+    fade.par.brightness1.expr = f"0.60 + ({E}) * 0.34"
     connect_op(fade, 0, feedback)
 
     comp_fb = create_op(p, 'comp_feedback', 'compositeTOP')
@@ -150,8 +153,8 @@ def build():
     if glow is not None:
         glow.nodeX, glow.nodeY = 200, 100
         try:
-            glow.par.size.expr     = f"1 + ({BASS}) * 25"
-            glow.par.strength.expr = f"0.05 + ({BASS}) * 0.7"
+            glow.par.size.expr     = f"1 + ({E}) * 25"
+            glow.par.strength.expr = f"0.05 + ({E}) * 0.7"
         except AttributeError:
             pass
         connect_op(glow, 0, comp_fb)
@@ -179,8 +182,9 @@ def build():
     print("SETUP: select 'video_in' → set Device to your webcam")
     print("→ Right-click OUTPUT → View")
     print("→ audio_in red: click it → Parameters → pick your mic")
+    print("→ Not moving: select rms_gain, raise Gain (try 20–50)")
     print()
-    print("BASS → ghost trails   MID → colour shift   HIGH → pixel ripple")
+    print("Loud audio → displacement ripple + colour shift + ghost trails")
     print("=" * 55)
 
 
