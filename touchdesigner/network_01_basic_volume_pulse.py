@@ -46,11 +46,26 @@ def create_op(parent_comp, node_name, *type_names):
 
 
 def connect_op(dest, index, source):
-    """Wire source → dest input slot, trying setInput then inputConnectors."""
+    """Wire source → dest, trying setInput, inputConnectors, then par reference."""
     try:
         dest.setInput(index, source)
+        return
     except AttributeError:
+        pass
+    try:
         dest.inputConnectors[index].connect(source)
+        return
+    except (AttributeError, IndexError):
+        pass
+    # Operators like choptoTOP/audiospectrumCHOP use a parameter reference
+    candidates = ('chop', 'top', 'choppath', 'toppath') if index == 0 else ('chop2', 'top2')
+    for par_name in candidates:
+        try:
+            getattr(dest.par, par_name).val = source.path
+            return
+        except AttributeError:
+            continue
+    print(f"  Warning: could not connect {source.name} to {dest.name}[{index}]")
 
 
 def build():
