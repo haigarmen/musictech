@@ -80,8 +80,8 @@ def build():
 
     circle = create_op(p, 'circle_pulse', 'circleTOP')
     circle.nodeX, circle.nodeY = -500, -200
-    circle.par.radiusx.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
-    circle.par.radiusy.expr = "clamp(op('audio_data')[0] * 0.4, 0.05, 0.45)"
+    circle.par.radiusx.expr = "min(0.45, max(0.05, op('audio_data')[0] * 0.4))"
+    circle.par.radiusy.expr = "min(0.45, max(0.05, op('audio_data')[0] * 0.4))"
     circle.par.fillcolorr = 0.9
     circle.par.fillcolorg = 0.2
     circle.par.fillcolorb = 1.0

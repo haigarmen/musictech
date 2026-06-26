@@ -74,9 +74,9 @@ def build():
     spec_data.nodeX, spec_data.nodeY = -500, 300
     connect_op(spec_data, 0, spectrum)
 
-    BASS = "clamp((op('spectrum_data')[1]+op('spectrum_data')[2]+op('spectrum_data')[3]+op('spectrum_data')[4])*60, 0, 1)"
-    MID  = "clamp((op('spectrum_data')[15]+op('spectrum_data')[25]+op('spectrum_data')[35])*90, 0, 1)"
-    HIGH = "clamp((op('spectrum_data')[60]+op('spectrum_data')[90]+op('spectrum_data')[120])*120, 0, 1)"
+    BASS = "min(1.0, max(0.0, (op('spectrum_data')[1]+op('spectrum_data')[2]+op('spectrum_data')[3]+op('spectrum_data')[4])*60))"
+    MID  = "min(1.0, max(0.0, (op('spectrum_data')[15]+op('spectrum_data')[25]+op('spectrum_data')[35])*90))"
+    HIGH = "min(1.0, max(0.0, (op('spectrum_data')[60]+op('spectrum_data')[90]+op('spectrum_data')[120])*120))"
 
     # ── Noise TOP ─────────────────────────────────────────────────────────────
 
